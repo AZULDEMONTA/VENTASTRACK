@@ -1,4 +1,158 @@
-var sheets = ['ventas','objetivos','facturacion','feriados'];
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>VentasTrack</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',sans-serif;background:#111318;color:#e8edf5;font-size:14px}
+::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:#3a424f;border-radius:3px}
+input,select{background:#1a1f28;border:1px solid #3a424f;color:#e8edf5;border-radius:8px;padding:7px 11px;font-family:inherit;font-size:14px;outline:none;width:100%}
+input:focus,select:focus{border-color:#58a6ff}
+button{cursor:pointer;font-family:inherit;transition:all .15s}
+.card{background:#1a1f28;border:1px solid #2d3440;border-radius:12px;padding:14px;margin-bottom:10px}
+.btn-p{background:#238636;border:1px solid #2ea043;color:#fff;padding:7px 14px;border-radius:8px;font-weight:600;font-size:13px;cursor:pointer}
+.btn-p:hover{background:#2ea043}
+.btn-g{background:none;border:1px solid #3a424f;color:#d8dfe8;padding:7px 12px;border-radius:8px;font-size:13px;cursor:pointer}
+.btn-g:hover{border-color:#58a6ff;color:#58a6ff}
+.nav{display:flex;overflow-x:auto;border-bottom:1px solid #2d3440;margin-bottom:16px}
+.nav button{background:none;border:none;border-bottom:2px solid transparent;color:#a8b3c2;padding:9px 14px;white-space:nowrap;font-size:13px;font-weight:500;cursor:pointer}
+.nav button.on{color:#58a6ff;border-bottom-color:#58a6ff}
+.pbg{background:#2d3440;border-radius:99px;overflow:hidden}
+.pfill{height:100%;border-radius:99px;transition:width .6s}
+.kv{display:grid;gap:10px;margin-bottom:12px;grid-template-columns:repeat(2,1fr)}
+@media(min-width:600px){.kv{grid-template-columns:repeat(4,1fr)}}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{padding:8px 10px;text-align:left;color:#a8b3c2;font-weight:500;border-bottom:1px solid #2d3440;white-space:nowrap}
+td{padding:7px 10px;border-bottom:1px solid #1e2530;vertical-align:middle}
+.chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 20px;border-radius:10px;font-size:13px;z-index:999;display:none;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,.4)}
+</style>
+</head>
+<body>
+<div style="max-width:960px;margin:0 auto;padding:12px">
+
+  <!-- Header -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+    <div style="display:flex;align-items:center;gap:8px">
+      <div style="width:28px;height:28px;background:linear-gradient(135deg,#238636,#58a6ff);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:15px">📊</div>
+      <div>
+        <div style="font-weight:700;font-size:16px">VentasTrack</div>
+        <div id="lastUpdate" style="font-size:11px;color:#7a8799"></div>
+      </div>
+    </div>
+    <button class="btn-g" style="font-size:12px;padding:5px 12px" onclick="loadAll()">↻ Actualizar</button>
+  </div>
+
+  <!-- Nav -->
+  <div class="nav">
+    <button class="on" onclick="goTab('dash')">📊 Dashboard</button>
+    <button onclick="goTab('rank')">🏆 Ranking</button>
+    <button onclick="goTab('ventas')">📂 Ventas</button>
+    <button onclick="goTab('obj')">🎯 Objetivos</button>
+    <button onclick="goTab('feriados')">📅 Feriados</button>
+  </div>
+
+  <div id="content">
+    <div style="text-align:center;padding:60px 20px;color:#a8b3c2">
+      <div style="font-size:36px;margin-bottom:12px">⏳</div>
+      <div style="font-size:15px">Cargando datos desde Google Sheets...</div>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+var PUB_ID = '2PACX-1vQJAAPrRQU65pCbj8awH_v2bgRhn8aRGvkN5i2hgiHnLniQcVY1NS9MwDQka1OmDs2TGxojNd-c3oEc';
+var GIDS = { ventas:'0', objetivos:'187233898', facturacion:'988498656', feriados:'2020984664' };
+
+var MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+var MS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+var TODAY = new Date();
+
+var STATE = {
+  sellers:[], goals:{}, sales:[], holidays:{}, billed:{}, billable:{},
+  selMonth: TODAY.getMonth(), selYear: TODAY.getFullYear(), tab:'dash'
+};
+
+var MONTH_MAP = {};
+(function(){
+  var names=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  var abbr=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  for(var i=0;i<12;i++){
+    MONTH_MAP[names[i]]=i; MONTH_MAP[abbr[i]]=i;
+    MONTH_MAP[String(i+1)]=i; MONTH_MAP[('0'+(i+1)).slice(-2)]=i;
+  }
+})();
+
+function fmt(n){if(!n&&n!==0)return '$0';return '$'+Number(n).toLocaleString('es-AR',{maximumFractionDigits:0});}
+function pct(v,g){return !g?0:Math.round(v/g*100);}
+function sc(p){return p>=100?'#00e5a0':p>=70?'#f5c542':'#ff5e5e';}
+function daysInMonth(m,y){return new Date(y,m+1,0).getDate();}
+function isWknd(d){var w=d.getDay();return w===0||w===6;}
+function isoD(y,m,d){return y+'-'+('0'+(m+1)).slice(-2)+'-'+('0'+d).slice(-2);}
+function hKey(m,y){return y+'-'+('0'+(m+1)).slice(-2);}
+function bKey(m,y){return y+'-'+m;}
+function getHols(m,y){return STATE.holidays[hKey(m,y)]||[];}
+
+function parseAmt(raw){
+  if(typeof raw==='number') return raw;
+  var s=String(raw).trim().replace(/[$\s]/g,'');
+  if(!s||s==='-') return 0;
+  s=s.replace(/\./g,'').replace(',','.');
+  return parseFloat(s)||0;
+}
+function cleanDate(raw){
+  if(!raw) return '';
+  var s=String(raw).trim();
+  if(s.includes('T')) return s.slice(0,10);
+  var pts=s.split(/[-\/]/);
+  if(pts.length===3) return pts[0].length===4?s.slice(0,10):('20'+pts[2]).slice(-4)+'-'+('0'+pts[1]).slice(-2)+'-'+('0'+pts[0]).slice(-2);
+  return s;
+}
+function buildDays(m,y,hols){
+  hols=hols||[];
+  var days=[];
+  for(var i=1;i<=daysInMonth(m,y);i++){
+    var dt=new Date(y,m,i),s=isoD(y,m,i);
+    days.push({d:i,s:s,work:!isWknd(dt)&&hols.indexOf(s)===-1});
+  }
+  return days;
+}
+function totalWD(dl){var n=0;for(var i=0;i<dl.length;i++)if(dl[i].work)n++;return n;}
+function wdUpTo(dl,upto){var n=0;for(var i=0;i<dl.length;i++)if(dl[i].d<=upto&&dl[i].work)n++;return n;}
+
+// ── Fetch desde Apps Script ───────────────────────────────────
+function fetchSheet(sheetName, callback) {
+  var gid = GIDS[sheetName];
+  var url = 'https://docs.google.com/spreadsheets/d/e/' + PUB_ID + '/pub?gid=' + gid + '&single=true&output=csv';
+  fetch(url)
+    .then(function(res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.text();
+    })
+    .then(function(text) { callback(null, parseCSV(text)); })
+    .catch(function(err) { callback(err); });
+}
+
+function parseCSV(text) {
+  var lines = text.trim().split('\n').filter(Boolean);
+  if (lines.length < 2) return [];
+  var headers = lines[0].split(',').map(function(h){ return h.trim().replace(/"/g,'').toLowerCase(); });
+  return lines.slice(1).map(function(line){
+    var vals = line.split(',').map(function(v){ return v.trim().replace(/"/g,''); });
+    var obj = {};
+    headers.forEach(function(h,i){ obj[h] = vals[i]||''; });
+    return obj;
+  });
+}
+
+function loadAll() {
+  document.getElementById('content').innerHTML = '<div style="text-align:center;padding:60px 20px;color:#a8b3c2"><div style="font-size:36px;margin-bottom:12px">⏳</div><div style="font-size:15px">Cargando datos desde Google Sheets...</div></div>';
+
+  var results = {};
+  var sheets = ['ventas','objetivos','facturacion','feriados'];
   var loaded = 0;
   var hasError = false;
 
