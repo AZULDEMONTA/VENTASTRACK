@@ -26,8 +26,7 @@ button{cursor:pointer;font-family:inherit;transition:all .15s}
 .pbg{background:#2d3440;border-radius:99px;overflow:hidden;position:relative}
 .pfill{height:100%;border-radius:99px;transition:width .6s}
 .kv{display:grid;gap:10px;margin-bottom:12px;grid-template-columns:repeat(2,1fr)}
-@media(min-width:600px){.kv{grid-template-columns:repeat(3,1fr)}}
-@media(min-width:900px){.kv{grid-template-columns:repeat(5,1fr)}}
+@media(min-width:600px){.kv{grid-template-columns:repeat(4,1fr)}}
 .c2{display:grid;gap:12px;margin-bottom:10px;grid-template-columns:1fr}
 @media(min-width:700px){.c2{grid-template-columns:1fr 1fr}}
 table{width:100%;border-collapse:collapse;font-size:13px}
@@ -359,8 +358,6 @@ function renderDash(){
   h+=kCard('Objetivo',fmt(tg),'suma vendedores');
   h+=kCard('Avance',tp+'%','<span style="color:'+(tp>=mthPct?'#00e5a0':'#ff5e5e')+'">'+tp+'%</span> vs <span style="color:#58a6ff">'+mthPct+'%</span> mes',tp>=mthPct?'#00e5a0':'#ff5e5e');
   h+=kCard('Dias habiles',elWD+'/'+twd,remWD+' restantes');
-  var boPct=tv>0?Math.round(backorder/tv*100):0;
-  h+=kCard('Backorder',fmt(Math.max(0,backorder)),(billedAmt||billableAmt)?boPct+'% del vendido':'Sin datos fact.',backorder>0?'#ff5e5e':backorder===0?'#00e5a0':null);
   h+='</div>';
 
   h+='<div class="card" style="border-color:'+tc+'44;margin-bottom:10px">';
