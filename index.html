@@ -1,0 +1,714 @@
+import { useState, useMemo, useEffect } from "react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
+
+const MONTHS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+const MS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+const TODAY = new Date();
+const COLORS = ["#58a6ff","#00e5a0","#f5c542","#ff5e5e","#b08aff","#ff9f43"];
+const C = { bg:"#111318", card:"#1a1f28", border:"#2d3440", b2:"#3a424f", text:"#e8edf5", sub:"#d8dfe8", muted:"#a8b3c2", faint:"#7a8799" };
+
+const fmt    = n => !n&&n!==0?"$0":"$"+Number(n).toLocaleString("es-AR",{maximumFractionDigits:0});
+const fmtK   = n => { if(!n) return "$0"; if(Math.abs(n)>=1e6) return "$"+(n/1e6).toFixed(1)+"M"; if(Math.abs(n)>=1e3) return "$"+(n/1e3).toFixed(0)+"k"; return "$"+n; };
+const pct    = (v,g) => !g?0:Math.round(v/g*100);
+const sc     = p => p>=100?"#00e5a0":p>=70?"#f5c542":"#ff5e5e";
+const dim    = (m,y) => new Date(y,m+1,0).getDate();
+const wknd   = d => { const w=d.getDay(); return w===0||w===6; };
+const isoD   = (y,m,d) => `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+const hk     = (m,y) => `${y}-${String(m+1).padStart(2,"0")}`;
+const bk     = (m,y) => `${y}-${m}`;
+const fmtPct = n => n.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})+"%";
+const fmtAmt = n => n===0?"$ -":"$ "+Number(n).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0});
+
+const MONTH_MAP = (()=>{
+  const m={};
+  ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"]
+    .forEach((n,i)=>{ m[n]=i; m[MS[i].toLowerCase()]=i; m[String(i+1)]=i; m[String(i+1).padStart(2,"0")]=i; });
+  return m;
+})();
+
+function buildDays(m,y,hols=[]) {
+  return Array.from({length:dim(m,y)},(_,i)=>{
+    const d=i+1, dt=new Date(y,m,d), s=isoD(y,m,d);
+    return {d,s,work:!wknd(dt)&&!hols.includes(s),dt};
+  });
+}
+const TWD  = dl => dl.filter(x=>x.work).length;
+const wdTo = (dl,u) => dl.filter(x=>x.d<=u&&x.work).length;
+
+function parseAmt(raw) {
+  if (typeof raw==="number") return raw;
+  let s=String(raw).trim().replace(/[$\s]/g,"");
+  if (!s||s==="-") return 0;
+  if (s.indexOf(",")!==-1&&s.indexOf(".")===-1) s=s.replace(",",".");
+  else if (s.indexOf(",")!==-1&&s.indexOf(".")!==-1) s=s.replace(/\./g,"").replace(",",".");
+  else s=s.replace(/\./g,"");
+  return parseFloat(s)||0;
+}
+function cleanDate(raw) {
+  if (!raw) return "";
+  const s=String(raw).trim();
+  if (s.includes("T")) return s.slice(0,10);
+  const pts=s.split(/[-/]/);
+  if (pts.length===3) {
+    if (pts[0].length===4) return s.slice(0,10);
+    return `${pts[2].length===4?pts[2]:"20"+pts[2]}-${pts[1].padStart(2,"0")}-${pts[0].padStart(2,"0")}`;
+  }
+  return s;
+}
+function parseCSV(text) {
+  const lines=text.trim().split("\n").filter(Boolean);
+  if (lines.length<2) return [];
+  const hdr=lines[0].split(",").map(h=>h.trim().replace(/"/g,"").toLowerCase());
+  return lines.slice(1).map(line=>{
+    const vals=line.split(",").map(v=>v.trim().replace(/"/g,""));
+    const obj={}; hdr.forEach((h,i)=>obj[h]=vals[i]||""); return obj;
+  });
+}
+
+const PUB_ID = "2PACX-1vSL2SaKcCwnmKdjPkw4wBNbYWfzNfHNaW1gX8Q7e-dbKALFjUd6gu3u8gffeRU-cQ";
+const GIDS = {ventas:"496653887",objetivos:"852661634",facturacion:"571985744",feriados:"260722128"};
+
+async function fetchSheet(name) {
+  const url=`https://docs.google.com/spreadsheets/d/e/${PUB_ID}/pub?gid=${GIDS[name]}&single=true&output=csv`;
+  const r=await fetch(url);
+  if (!r.ok) throw new Error("HTTP "+r.status);
+  return parseCSV(await r.text());
+}
+
+// ── CSS ──────────────────────────────────────────────────────────
+const CSS = `
+  *{box-sizing:border-box;margin:0;padding:0}
+  ::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:${C.b2};border-radius:3px}
+  input,select{background:${C.card};border:1px solid ${C.b2};color:${C.text};border-radius:8px;padding:7px 11px;font-family:inherit;font-size:14px;outline:none;width:100%}
+  input:focus,select:focus{border-color:#58a6ff}
+  button{cursor:pointer;font-family:inherit;transition:all .15s}
+  .card{background:${C.card};border:1px solid ${C.border};border-radius:12px;padding:14px;margin-bottom:10px}
+  .btn-g{background:none;border:1px solid ${C.b2};color:${C.sub};padding:7px 12px;border-radius:8px;font-size:13px}
+  .btn-g:hover{border-color:#58a6ff;color:#58a6ff}
+  .btn-s{background:none;border:1px solid ${C.b2};color:${C.muted};padding:5px 10px;border-radius:6px;font-size:12px}
+  .btn-s.on{background:#21262d;border-color:#58a6ff;color:#58a6ff}
+  .tab{background:none;border:none;border-bottom:2px solid transparent;color:${C.muted};padding:9px 14px;white-space:nowrap;font-size:13px;font-weight:500}
+  .tab.on{color:#58a6ff;border-bottom-color:#58a6ff}
+  .pbg{background:${C.border};border-radius:99px;overflow:hidden}
+  .pfill{height:100%;border-radius:99px;transition:width .6s}
+  .chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600}
+  .kv{display:grid;gap:10px;margin-bottom:12px;grid-template-columns:repeat(2,1fr)}
+  @media(min-width:600px){.kv{grid-template-columns:repeat(3,1fr)}}
+  @media(min-width:900px){.kv{grid-template-columns:repeat(5,1fr)}}
+  .c2{display:grid;gap:12px;margin-bottom:10px;grid-template-columns:1fr}
+  @media(min-width:700px){.c2{grid-template-columns:1fr 1fr}}
+  .rtbl{border-collapse:collapse;width:100%;font-size:12px}
+  .rtbl th,.rtbl td{border:1px solid #252d3a;padding:0}
+  .rtbl th{background:#161b22;color:${C.muted};font-weight:600;text-align:center}
+  .rtbl .lbl{text-align:left;padding:4px 10px;white-space:nowrap;background:#13181f;color:${C.muted};font-size:11px}
+  .rtbl .lbl.today{color:#58a6ff;font-weight:700;background:#0d1f33}
+`;
+
+const TTip = ({active,payload,label}) => {
+  if(!active||!payload?.length) return null;
+  return <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 14px",fontSize:12}}>
+    <div style={{color:C.muted,marginBottom:4}}>{label}</div>
+    {payload.map((p,i)=><div key={i} style={{color:p.color||C.text,fontWeight:600}}>{p.name}: {fmtK(p.value)}</div>)}
+  </div>;
+};
+
+export default function App() {
+  const [data,setData]         = useState(null);
+  const [loading,setLoading]   = useState(true);
+  const [error,setError]       = useState(null);
+  const [lastLoad,setLastLoad] = useState(null);
+  const [tab,setTab]           = useState("dash");
+  const [selMonth,setSelMonth] = useState(TODAY.getMonth());
+  const [selYear,setSelYear]   = useState(TODAY.getFullYear());
+  const [rankSort,setRankSort] = useState("pct");
+
+  async function loadAll() {
+    setLoading(true); setError(null);
+    try {
+      const [vR,oR,fR,hR] = await Promise.all([
+        fetchSheet("ventas"),fetchSheet("objetivos"),fetchSheet("facturacion"),fetchSheet("feriados")
+      ]);
+      const fk = (r,...names) => {
+        for (const n of names) {
+          const k=Object.keys(r).find(k=>k.toLowerCase().trim()===n.toLowerCase());
+          if (k!==undefined&&r[k]!=="") return r[k];
+        }
+        return "";
+      };
+      const sales=vR.map((r,i)=>({
+        id:`r${i}`, date:cleanDate(fk(r,"fecha","date")),
+        seller:String(fk(r,"vendedor","seller")||"").trim(),
+        client:String(fk(r,"cliente","client")||"").trim(),
+        amount:parseAmt(fk(r,"importe","amount","monto","total"))
+      })).filter(r=>r.seller&&r.amount>0);
+
+      const goals={}, sellers=[];
+      oR.forEach(r=>{
+        const sk=Object.keys(r).find(k=>/vendedor|seller/i.test(k));
+        const seller=String(r[sk]||"").trim(); if(!seller) return;
+        if(!sellers.includes(seller)) sellers.push(seller);
+        goals[seller]={};
+        Object.entries(r).forEach(([k,v])=>{
+          if(/vendedor|seller/i.test(k)) return;
+          const mi=MONTH_MAP[k.toLowerCase().trim().replace(/\s+/g,"")];
+          if(mi!==undefined){const val=parseAmt(v);if(val>0) goals[seller][mi]=val;}
+        });
+      });
+
+      const billed={}, billable={};
+      fR.forEach(r=>{
+        const mk=Object.keys(r).find(k=>/mes|month/i.test(k));
+        const mi=MONTH_MAP[String(r[mk]||"").toLowerCase().trim()];
+        if(mi===undefined) return;
+        const yk=Object.keys(r).find(k=>/a.o|anio|ano|year/i.test(k)||k.toLowerCase().trim()==="año");
+        const yr=parseInt(String(r[yk]||"").trim(),10)||TODAY.getFullYear();
+        const fk2=Object.keys(r).find(k=>/facturado|billed/i.test(k)&&!/facturable/i.test(k));
+        const lk=Object.keys(r).find(k=>/facturable|billable/i.test(k));
+        if(fk2) billed[bk(mi,yr)]=parseAmt(r[fk2]);
+        if(lk)  billable[bk(mi,yr)]=parseAmt(r[lk]);
+      });
+
+      const holidays={};
+      hR.forEach(r=>{
+        const fk3=Object.keys(r).find(k=>/fecha|date/i.test(k));
+        const raw=r[fk3]||Object.values(r)[0]||"";
+        const f=cleanDate(String(raw).trim()); if(!f) return;
+        const d=new Date(f+"T12:00:00"); if(isNaN(d)) return;
+        const k=hk(d.getMonth(),d.getFullYear());
+        if(!holidays[k]) holidays[k]=[];
+        const iso=isoD(d.getFullYear(),d.getMonth(),d.getDate());
+        if(!holidays[k].includes(iso)) holidays[k].push(iso);
+      });
+
+      setData({sales,sellers,goals,billed,billable,holidays});
+      setLastLoad(new Date());
+    } catch(e) {
+      setError("No se pudo cargar el Google Sheet. Verificá que esté publicado.");
+    }
+    setLoading(false);
+  }
+
+  useEffect(()=>{ loadAll(); },[]);
+
+  const {sales=[],sellers=[],goals={},billed={},billable={},holidays={}} = data||{};
+  const getHols=(m,y)=>holidays[hk(m,y)]||[];
+  const dayList=useMemo(()=>buildDays(selMonth,selYear,getHols(selMonth,selYear)),[selMonth,selYear,data]);
+  const workDays=useMemo(()=>dayList.filter(d=>d.work),[dayList]);
+  const twd2=useMemo(()=>TWD(dayList),[dayList]);
+  const isCur=selMonth===TODAY.getMonth()&&selYear===TODAY.getFullYear();
+  const todDay=isCur?TODAY.getDate():dim(selMonth,selYear);
+  const elWD=useMemo(()=>wdTo(dayList,todDay),[dayList,todDay]);
+  const remWD=twd2-elWD;
+  const mthPct=twd2?Math.round(elWD/twd2*100):0;
+
+  const monthSales=useMemo(()=>sales.filter(s=>{
+    const d=new Date(s.date);return !isNaN(d)&&d.getMonth()===selMonth&&d.getFullYear()===selYear;
+  }),[sales,selMonth,selYear]);
+
+  const sellerData=useMemo(()=>sellers.map(seller=>{
+    const ss=monthSales.filter(s=>s.seller===seller);
+    const total=ss.reduce((a,b)=>a+b.amount,0);
+    const goal=(goals[seller]&&goals[seller][selMonth])||0;
+    const p=pct(total,goal),gap=goal-total;
+    const exp=goal&&twd2?Math.round(goal/twd2*elWD):0;
+    const dailyGoal=twd2>0?Math.round(goal/twd2):0;
+    const byDay={};
+    ss.forEach(s=>{const d=new Date(s.date);if(!isNaN(d)) byDay[d.getDate()]=(byDay[d.getDate()]||0)+s.amount;});
+    let cumDias=0,evalDias=0;
+    dayList.forEach(day=>{
+      if(!day.work||day.d>todDay) return;
+      evalDias++;
+      if((byDay[day.d]||0)>=dailyGoal) cumDias++;
+    });
+    return {seller,total,goal,p,gap,vsExp:total-exp,
+      dailyAvg:elWD?Math.round(total/elWD):0,
+      dailyNeed:goal&&remWD?Math.round(Math.max(0,gap)/remWD):0,
+      dailyGoal,byDay,cumDias,evalDias,pctDias:evalDias>0?Math.round(cumDias/evalDias*100):0};
+  }),[sellers,monthSales,goals,selMonth,elWD,twd2,remWD,dayList,todDay]);
+
+  const PeriodSel=()=>(
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+      <span style={{color:C.muted,fontSize:13,flexShrink:0}}>Período:</span>
+      <select value={selMonth} onChange={e=>setSelMonth(+e.target.value)} style={{width:"auto",minWidth:120}}>
+        {MONTHS.map((m,i)=><option key={i} value={i}>{m}</option>)}
+      </select>
+      <input type="number" value={selYear} onChange={e=>setSelYear(+e.target.value)} style={{width:72}}/>
+    </div>
+  );
+
+  const KCard=({label,value,sub,color})=>(
+    <div className="card" style={{borderColor:color?color+"44":C.border}}>
+      <div style={{fontSize:11,textTransform:"uppercase",letterSpacing:.6,color:C.muted,marginBottom:3}}>{label}</div>
+      <div style={{fontSize:18,fontWeight:700,color:color||C.text}}>{value}</div>
+      <div style={{fontSize:12,color:C.muted,marginTop:3}}>{sub}</div>
+    </div>
+  );
+
+  const BP=({p,color,h=8})=>(
+    <div className="pbg" style={{height:h}}>
+      <div className="pfill" style={{width:`${Math.min(100,p)}%`,background:color,height:h}}/>
+    </div>
+  );
+
+  if (loading) return (
+    <div style={{background:C.bg,minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",color:C.muted,fontFamily:"'Segoe UI',sans-serif",gap:16}}>
+      <div style={{width:36,height:36,border:`3px solid ${C.border}`,borderTop:"3px solid #58a6ff",borderRadius:"50%",animation:"spin 1s linear infinite"}}/>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      <div style={{fontSize:14}}>Cargando datos...</div>
+    </div>
+  );
+
+  // ── RENDIMIENTO ──────────────────────────────────────────────
+  function renderRendimiento() {
+    const cellBg  = p => p>=100?"#172217":p>=50?"#231f0e":"#221515";
+    const cellCol = p => p>=100?"#00e5a0":p>=50?"#f5c542":"#ff5e5e";
+
+    const totalGoal      = sellerData.reduce((a,b)=>a+b.goal,0);
+    const totalDailyGoal = twd2>0?Math.round(totalGoal/twd2):0;
+
+    return (
+      <div>
+        <PeriodSel/>
+        <div style={{overflowX:"auto"}}>
+          <table className="rtbl">
+            <thead>
+              {/* Fila 1: nombre vendedores + empresa */}
+              <tr>
+                <th style={{padding:"6px 10px",textAlign:"left",minWidth:55,fontSize:11}}>DÍA</th>
+                {sellerData.map((r,i)=>(
+                  <th key={r.seller} colSpan={2}
+                    style={{padding:"6px 10px",color:COLORS[i%COLORS.length],
+                      borderLeft:`2px solid ${COLORS[i%COLORS.length]}55`,minWidth:180}}>
+                    {r.seller.toUpperCase()}
+                  </th>
+                ))}
+                <th colSpan={2} style={{padding:"6px 10px",color:"#e8edf5",borderLeft:"2px solid #ffffff33",minWidth:180}}>
+                  EMPRESA
+                </th>
+              </tr>
+              {/* Fila 2: objetivo mensual */}
+              <tr>
+                <th style={{padding:"3px 10px",fontSize:10,color:C.faint,textAlign:"left"}}>OBJETIVO $</th>
+                {sellerData.map((r,i)=>(
+                  <td key={r.seller} colSpan={2}
+                    style={{textAlign:"center",padding:"3px 10px",fontSize:11,color:C.sub,
+                      background:"#0f1318",borderLeft:`2px solid ${COLORS[i%COLORS.length]}33`}}>
+                    {fmt(r.goal)}
+                  </td>
+                ))}
+                <td colSpan={2} style={{textAlign:"center",padding:"3px 10px",fontSize:11,color:C.sub,background:"#0f1318",borderLeft:"2px solid #ffffff22"}}>
+                  {fmt(totalGoal)}
+                </td>
+              </tr>
+              {/* Fila 3: objetivo diario */}
+              <tr>
+                <th style={{padding:"3px 10px",fontSize:10,color:C.faint,textAlign:"left"}}>DIARIO $</th>
+                {sellerData.map((r,i)=>(
+                  <td key={r.seller} colSpan={2}
+                    style={{textAlign:"center",padding:"3px 10px",fontSize:11,color:"#58a6ff",
+                      background:"#0f1318",borderLeft:`2px solid ${COLORS[i%COLORS.length]}33`}}>
+                    {fmt(r.dailyGoal)}
+                  </td>
+                ))}
+                <td colSpan={2} style={{textAlign:"center",padding:"3px 10px",fontSize:11,color:"#58a6ff",background:"#0f1318",borderLeft:"2px solid #ffffff22"}}>
+                  {fmt(totalDailyGoal)}
+                </td>
+              </tr>
+              {/* Fila 4: sub-encabezados */}
+              <tr>
+                <th style={{padding:"5px 10px",fontSize:10}}></th>
+                {sellerData.map((r,i)=>[
+                  <th key={`${r.seller}-v`} style={{padding:"5px 8px",fontSize:10,color:C.faint,borderLeft:`2px solid ${COLORS[i%COLORS.length]}33`}}>Venta ($)</th>,
+                  <th key={`${r.seller}-p`} style={{padding:"5px 8px",fontSize:10,color:C.faint}}>% Obj.</th>
+                ])}
+                <th style={{padding:"5px 8px",fontSize:10,color:C.faint,borderLeft:"2px solid #ffffff22"}}>Total ($)</th>
+                <th style={{padding:"5px 8px",fontSize:10,color:C.faint}}>% Obj.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {workDays.map(day=>{
+                const isPast  = day.d<=todDay;
+                const isToday = day.d===todDay&&isCur;
+                const label   = `${String(day.d).padStart(2,"0")}/${String(selMonth+1).padStart(2,"0")}`;
+                const totalDay    = sellerData.reduce((a,r)=>a+(r.byDay[day.d]||0),0);
+                const totalDayPct = totalDailyGoal>0?(totalDay/totalDailyGoal*100):0;
+
+                return (
+                  <tr key={day.s} style={{background:isToday?"#0c1d30":"transparent"}}>
+                    <td className={`lbl${isToday?" today":""}`}>{label}</td>
+                    {sellerData.map((r,i)=>{
+                      const venta=r.byDay[day.d]||0;
+                      const vPct=r.dailyGoal>0?(venta/r.dailyGoal*100):0;
+                      const bg  = isPast?cellBg(vPct):"transparent";
+                      const col = isPast?cellCol(vPct):C.faint;
+                      return [
+                        <td key={`${r.seller}-v`} style={{padding:"4px 8px",fontSize:12,textAlign:"right",background:bg,color:isPast?C.sub:C.faint,borderLeft:`2px solid ${COLORS[i%COLORS.length]}22`}}>
+                          {isPast?fmtAmt(venta):"-"}
+                        </td>,
+                        <td key={`${r.seller}-p`} style={{padding:"4px 8px",fontSize:12,textAlign:"right",background:bg,color:col,fontWeight:isPast&&vPct>0?"600":"normal"}}>
+                          {isPast?fmtPct(vPct):"-"}
+                        </td>
+                      ];
+                    })}
+                    <td style={{padding:"4px 8px",fontSize:12,textAlign:"right",background:isPast?cellBg(totalDayPct):"transparent",color:isPast?C.sub:C.faint,borderLeft:"2px solid #ffffff15",fontWeight:"600"}}>
+                      {isPast?fmtAmt(totalDay):"-"}
+                    </td>
+                    <td style={{padding:"4px 8px",fontSize:12,textAlign:"right",background:isPast?cellBg(totalDayPct):"transparent",color:isPast?cellCol(totalDayPct):C.faint,fontWeight:isPast&&totalDayPct>0?"700":"normal"}}>
+                      {isPast?fmtPct(totalDayPct):"-"}
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {/* Fila ACUMULADO */}
+              <tr style={{borderTop:`2px solid ${C.border}`}}>
+                <td style={{padding:"6px 10px",fontSize:12,fontWeight:700,color:"#f5c542",background:"#1c1f12",textAlign:"left"}}>ACUMULADO</td>
+                {sellerData.map((r,i)=>{
+                  const tp=r.goal>0?(r.total/r.goal*100):0;
+                  return [
+                    <td key={`${r.seller}-av`} style={{padding:"6px 8px",fontSize:12,fontWeight:700,color:"#f5c542",background:"#1c1f12",borderLeft:`2px solid ${COLORS[i%COLORS.length]}44`,textAlign:"right"}}>
+                      {fmtAmt(r.total)}
+                    </td>,
+                    <td key={`${r.seller}-ap`} style={{padding:"6px 8px",fontSize:12,fontWeight:700,color:cellCol(tp),background:"#1c1f12",textAlign:"right"}}>
+                      {fmtPct(tp)}
+                    </td>
+                  ];
+                })}
+                {(()=>{
+                  const tot=sellerData.reduce((a,r)=>a+r.total,0);
+                  const tg =sellerData.reduce((a,r)=>a+r.goal,0);
+                  const tp =tg>0?(tot/tg*100):0;
+                  return [
+                    <td key="emp-v" style={{padding:"6px 8px",fontSize:12,fontWeight:700,color:"#f5c542",background:"#1c1f12",borderLeft:"2px solid #ffffff22",textAlign:"right"}}>{fmtAmt(tot)}</td>,
+                    <td key="emp-p" style={{padding:"6px 8px",fontSize:12,fontWeight:700,color:cellCol(tp),background:"#1c1f12",textAlign:"right"}}>{fmtPct(tp)}</td>
+                  ];
+                })()}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div style={{display:"flex",gap:14,fontSize:11,marginTop:12,flexWrap:"wrap"}}>
+          {[
+            {bg:"#172217",col:"#00e5a0",label:"≥ 100% objetivo"},
+            {bg:"#231f0e",col:"#f5c542",label:"50–99%"},
+            {bg:"#221515",col:"#ff5e5e",label:"< 50% o sin venta"},
+          ].map(l=>(
+            <span key={l.label} style={{display:"flex",alignItems:"center",gap:5}}>
+              <span style={{width:10,height:10,borderRadius:2,background:l.bg,border:`1px solid ${l.col}55`,display:"inline-block"}}/>
+              <span style={{color:l.col}}>{l.label}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ── DASHBOARD ────────────────────────────────────────────────
+  function renderDash(){
+    const m=selMonth,yr=selYear;
+    const tv=sellerData.reduce((a,b)=>a+b.total,0);
+    const tg=sellerData.reduce((a,b)=>a+b.goal,0);
+    const tp=pct(tv,tg),tc=sc(tp),tgap=tg-tv;
+    const tdAvg=elWD?Math.round(tv/elWD):0;
+    const tdNeed=tg&&remWD?Math.round(Math.max(0,tgap)/remWD):0;
+    const tvsExp=tv-(tg&&twd2?Math.round(tg/twd2*elWD):0);
+    const billedAmt=billed[bk(m,yr)]||0, billableAmt=billable[bk(m,yr)]||0;
+    const backorder=tv-(billedAmt+billableAmt), boPct=tv>0?Math.round(Math.max(0,backorder)/tv*100):0;
+    const anualData=MS.map((ms,i)=>{
+      const v=sales.filter(s=>{const d=new Date(s.date);return !isNaN(d)&&d.getMonth()===i&&d.getFullYear()===yr;}).reduce((a,b)=>a+b.amount,0);
+      return {mes:ms,Vendido:v||null,Facturado:billed[bk(i,yr)]||null,Facturable:billable[bk(i,yr)]||null};
+    });
+    const vsObjData=sellerData.map((r,i)=>({name:r.seller.split(" ")[0],Venta:r.total,"Obj.acum.":r.goal&&twd2?Math.round(r.goal/twd2*elWD):0,color:COLORS[i%COLORS.length]}));
+    const pieData=sellerData.filter(r=>r.total>0).map((r,i)=>({name:r.seller.split(" ")[0],value:r.total,color:COLORS[i%COLORS.length]}));
+    return (
+      <div>
+        <PeriodSel/>
+        <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:1,fontWeight:600,marginBottom:8}}>Empresa</div>
+        <div className="kv">
+          <KCard label="Venta Total" value={fmt(tv)} sub={`${MS[m]} ${yr}`}/>
+          <KCard label="Objetivo" value={fmt(tg)} sub="suma vendedores"/>
+          <KCard label="Avance" value={`${tp}%`} color={tp>=mthPct?"#00e5a0":"#ff5e5e"}
+            sub={<span><span style={{color:tp>=mthPct?"#00e5a0":"#ff5e5e"}}>{tp}%</span> <span style={{color:C.muted}}>vs</span> <span style={{color:"#58a6ff"}}>{mthPct}%</span> <span style={{color:C.muted}}>mes</span></span>}/>
+          <KCard label="Días hábiles" value={`${elWD}/${twd2}`} sub={`${remWD} restantes`}/>
+          <KCard label="Backorder" value={fmt(Math.max(0,backorder))} sub={`${boPct}% del vendido`} color={backorder>0?"#ff5e5e":"#00e5a0"}/>
+        </div>
+        <div className="card" style={{borderColor:tc+"44"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,flexWrap:"wrap",gap:6}}>
+            <b>Avance global</b><span style={{fontSize:22,fontWeight:700,color:tc}}>{tp}%</span>
+          </div>
+          <div style={{fontSize:13,color:C.sub,marginBottom:8}}>{fmt(tv)} / {fmt(tg)}</div>
+          <BP p={tp} color={tc}/>
+          <div style={{display:"flex",gap:12,fontSize:12,color:C.muted,flexWrap:"wrap",marginTop:8}}>
+            <span>Resta: <b style={{color:C.sub}}>{fmt(Math.max(0,tgap))}</b></span>
+            <span>Prom/día: <b style={{color:C.sub}}>{fmt(tdAvg)}</b></span>
+            {tgap>0&&remWD>0&&<span>Necesita: <b style={{color:tdNeed<=tdAvg?"#00e5a0":"#f5c542"}}>{fmt(tdNeed)}/día</b></span>}
+            <span>vs ritmo: <b style={{color:tvsExp>=0?"#00e5a0":"#ff5e5e"}}>{tvsExp>=0?"+":""}{fmt(tvsExp)}</b></span>
+          </div>
+        </div>
+        <div className="card">
+          <b style={{display:"block",marginBottom:10}}>Facturado · Facturable · Backorder</b>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            {[
+              {label:"Vendido",val:tv,color:"#58a6ff",sub:"100%"},
+              {label:"Facturado",val:billedAmt,color:"#2ea043",sub:tv?`${Math.round(billedAmt/tv*100)}%`:"—"},
+              {label:"Facturable",val:billableAmt,color:"#b08aff",sub:tv?`${Math.round(billableAmt/tv*100)}%`:"—"},
+              {label:"Backorder",val:Math.abs(backorder),color:backorder>0?"#ff5e5e":"#00e5a0",sub:backorder>0?`${boPct}% sin destino`:"todo asignado"},
+            ].map(b2=>(
+              <div key={b2.label} style={{background:C.bg,borderRadius:10,padding:"10px 12px",borderLeft:`3px solid ${b2.color}`}}>
+                <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>{b2.label}</div>
+                <div style={{fontSize:16,fontWeight:700,color:b2.color}}>{fmt(b2.val)}</div>
+                <div style={{fontSize:12,color:C.muted,marginTop:2}}>{b2.sub}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="card">
+          <div style={{fontWeight:600,fontSize:13,color:C.sub,marginBottom:10}}>Vendido · Facturado · Facturable — {yr}</div>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={anualData} margin={{top:4,right:8,bottom:0,left:8}}>
+              <XAxis dataKey="mes" tick={{fill:C.muted,fontSize:10}} axisLine={false} tickLine={false}/>
+              <YAxis tickFormatter={fmtK} tick={{fill:C.muted,fontSize:10}} axisLine={false} tickLine={false} width={48}/>
+              <Tooltip content={<TTip/>}/><Legend wrapperStyle={{fontSize:11,color:C.muted}}/>
+              <Bar dataKey="Vendido" fill="#58a6ff" radius={[4,4,0,0]}/>
+              <Bar dataKey="Facturado" fill="#2ea043" radius={[4,4,0,0]}/>
+              <Bar dataKey="Facturable" fill="#b08aff" radius={[4,4,0,0]}/>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="c2">
+          <div className="card">
+            <div style={{fontWeight:600,fontSize:13,color:C.sub,marginBottom:10}}>Venta vs Objetivo acum.</div>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={vsObjData} margin={{top:4,right:4,bottom:0,left:4}}>
+                <XAxis dataKey="name" tick={{fill:C.muted,fontSize:10}} axisLine={false} tickLine={false}/>
+                <YAxis tickFormatter={fmtK} tick={{fill:C.muted,fontSize:10}} axisLine={false} tickLine={false} width={48}/>
+                <Tooltip content={<TTip/>}/>
+                <Bar dataKey="Venta" radius={[4,4,0,0]}>{vsObjData.map((e,i)=><Cell key={i} fill={e.color}/>)}</Bar>
+                <Bar dataKey="Obj.acum." fill={C.border} radius={[4,4,0,0]}/>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="card">
+            <div style={{fontWeight:600,fontSize:13,color:C.sub,marginBottom:10}}>Participación</div>
+            <ResponsiveContainer width="100%" height={200}>
+              <PieChart>
+                <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} innerRadius={35} paddingAngle={3}>
+                  {pieData.map((e,i)=><Cell key={i} fill={e.color}/>)}
+                </Pie>
+                <Tooltip formatter={v=>fmtK(v)} contentStyle={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,fontSize:11}}/>
+                <Legend wrapperStyle={{fontSize:11,color:C.muted}}/>
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:1,fontWeight:600,marginBottom:8}}>Vendedores</div>
+        {sellerData.map(r=>{
+          const color=sc(r.p);
+          return (
+            <div key={r.seller} className="card">
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                <div>
+                  <div style={{fontWeight:600,fontSize:14}}>{r.seller}</div>
+                  <div style={{color:C.sub,fontSize:12,marginTop:2}}>{fmt(r.total)} / {r.goal?fmt(r.goal):"sin obj."}</div>
+                </div>
+                <span style={{fontSize:20,fontWeight:700,color}}>{r.p}%</span>
+              </div>
+              <BP p={r.p} color={color}/>
+              {r.goal>0&&(
+                <div style={{display:"flex",gap:10,fontSize:12,color:C.muted,flexWrap:"wrap",marginTop:6}}>
+                  <span>Resta: <b style={{color:C.sub}}>{fmt(Math.max(0,r.gap))}</b></span>
+                  <span>Prom: <b style={{color:C.sub}}>{fmt(r.dailyAvg)}</b></span>
+                  {r.gap>0&&remWD>0&&<span>Nec: <b style={{color:r.dailyNeed<=r.dailyAvg?"#00e5a0":"#f5c542"}}>{fmt(r.dailyNeed)}/día</b></span>}
+                  {r.vsExp!==0&&<span>vs ritmo: <b style={{color:r.vsExp>=0?"#00e5a0":"#ff5e5e"}}>{r.vsExp>=0?"+":""}{fmt(r.vsExp)}</b></span>}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function renderRank(){
+    const rows=[...sellerData].sort((a,b)=>rankSort==="pct"?b.p-a.p:rankSort==="total"?b.total-a.total:b.vsExp-a.vsExp);
+    const maxT=Math.max(...rows.map(r=>r.total),1);
+    const medals=["🥇","🥈","🥉"];
+    return (
+      <div>
+        <PeriodSel/>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
+          <b style={{fontSize:16}}>Ranking</b>
+          <div style={{display:"flex",gap:6}}>
+            {[["pct","% Obj"],["total","Total"],["ritmo","Ritmo"]].map(([k,l])=>(
+              <button key={k} className={`btn-s ${rankSort===k?"on":""}`} onClick={()=>setRankSort(k)}>{l}</button>
+            ))}
+          </div>
+        </div>
+        <div className="card" style={{padding:"0 14px"}}>
+          {rows.map((r,i)=>{
+            const color=sc(r.p),diff=r.p-mthPct;
+            return (
+              <div key={r.seller} style={{display:"flex",alignItems:"center",gap:10,padding:"14px 0",borderBottom:i<rows.length-1?`1px solid ${C.border}`:"none"}}>
+                <div style={{width:28,textAlign:"center",flexShrink:0,fontSize:i<3?18:13,color:i<3?"#f5c542":C.muted,fontWeight:700}}>{i<3?medals[i]:`#${i+1}`}</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                    <span style={{fontWeight:600}}>{r.seller}</span>
+                    <span style={{color:C.sub}}>{fmt(r.total)}</span>
+                  </div>
+                  <div className="pbg" style={{height:6}}><div className="pfill" style={{width:`${Math.round(r.total/maxT*100)}%`,height:6,background:color}}/></div>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:3,alignItems:"flex-end",flexShrink:0}}>
+                  <span className="chip" style={{background:color+"22",color}}>{r.p}% obj</span>
+                  {r.goal>0&&<span className="chip" style={{background:diff>=0?"#00e5a022":"#ff5e5e22",color:diff>=0?"#00e5a0":"#ff5e5e"}}>{diff>=0?"▲":"▼"}{Math.abs(diff)}pp</span>}
+                  {r.vsExp!==0&&<span className="chip" style={{background:r.vsExp>=0?"#00e5a022":"#ff5e5e22",color:r.vsExp>=0?"#00e5a0":"#ff5e5e"}}>{r.vsExp>=0?"+":""}{fmtK(r.vsExp)}</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  function renderVentas(){
+    const sorted=[...monthSales].sort((a,b)=>a.date<b.date?1:-1);
+    const total=sorted.reduce((a,b)=>a+b.amount,0);
+    return (
+      <div style={{maxWidth:700}}>
+        <h2 style={{fontSize:16,fontWeight:700,marginBottom:8}}>Ventas del período</h2>
+        <PeriodSel/>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <span style={{color:C.sub}}><b style={{color:C.text}}>{sorted.length}</b> registros</span>
+          <span style={{color:"#2ea043",fontWeight:700}}>{fmt(total)}</span>
+        </div>
+        {sorted.length===0
+          ?<div className="card" style={{textAlign:"center",padding:28,color:C.muted}}>Sin ventas en este período.</div>
+          :<div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+              <thead><tr style={{borderBottom:`1px solid ${C.border}`}}>
+                {["Fecha","Vendedor","Cliente","Importe"].map(h=><th key={h} style={{padding:"8px 10px",textAlign:"left",color:C.muted,fontWeight:500}}>{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {sorted.slice(0,300).map((s,i)=>(
+                  <tr key={i} style={{borderBottom:`1px solid #1e2530`}}>
+                    <td style={{padding:"7px 10px",color:C.muted,whiteSpace:"nowrap"}}>{s.date}</td>
+                    <td style={{padding:"7px 10px",whiteSpace:"nowrap"}}>{s.seller}</td>
+                    <td style={{padding:"7px 10px",color:C.muted,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.client||"—"}</td>
+                    <td style={{padding:"7px 10px",color:"#2ea043",fontWeight:600,whiteSpace:"nowrap"}}>{fmt(s.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        }
+      </div>
+    );
+  }
+
+  function renderObj(){
+    return (
+      <div style={{maxWidth:900}}>
+        <h2 style={{fontSize:16,fontWeight:700,marginBottom:6}}>Objetivos mensuales</h2>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+            <thead><tr style={{borderBottom:`1px solid ${C.border}`}}>
+              <th style={{padding:"8px 10px",textAlign:"left",color:C.muted,fontWeight:500,position:"sticky",left:0,background:C.card,zIndex:2}}>Vendedor</th>
+              {MS.map((m,i)=><th key={i} style={{padding:"8px 5px",textAlign:"center",color:i===selMonth?"#58a6ff":C.muted,fontWeight:500,minWidth:44}}>{m}</th>)}
+            </tr></thead>
+            <tbody>
+              {sellers.map(seller=>{
+                const r=sellerData.find(x=>x.seller===seller)||{total:0,p:0};
+                return (
+                  <tr key={seller} style={{borderBottom:`1px solid #1e2530`}}>
+                    <td style={{padding:"8px 10px",fontWeight:500,whiteSpace:"nowrap",position:"sticky",left:0,background:C.card,zIndex:1}}>{seller}</td>
+                    {MONTHS.map((_,mo)=>{
+                      const g=goals[seller]&&goals[seller][mo];
+                      const color=sc(pct(mo===selMonth?r.total:0,g||0));
+                      return <td key={mo} style={{textAlign:"center",padding:"6px 4px"}}>
+                        {g?<span style={{fontSize:12,fontWeight:600,color:mo===selMonth?color:"#2ea043"}}>${(g/1000).toFixed(0)}k</span>:<span style={{color:C.faint,fontSize:12}}>—</span>}
+                      </td>;
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  function renderFeriados(){
+    const m=selMonth,yr=selYear,hols=getHols(m,yr);
+    const dl=buildDays(m,yr,hols);
+    const fdow=new Date(yr,m,1).getDay(),adj=(fdow+6)%7;
+    const todISO=isoD(TODAY.getFullYear(),TODAY.getMonth(),TODAY.getDate());
+    const cells=[]; for(let i=0;i<adj;i++) cells.push(null); dl.forEach(d=>cells.push(d));
+    return (
+      <div style={{maxWidth:440}}>
+        <h2 style={{fontSize:16,fontWeight:700,marginBottom:6}}>Días no laborables</h2>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+          <select value={m} onChange={e=>setSelMonth(+e.target.value)} style={{width:"auto",minWidth:120}}>
+            {MONTHS.map((mo,i)=><option key={i} value={i}>{mo}</option>)}
+          </select>
+          <input type="number" value={yr} onChange={e=>setSelYear(+e.target.value)} style={{width:72}}/>
+          <span className="chip" style={{background:"#ff5e5e22",color:"#ff5e5e"}}>{hols.length} feriados</span>
+          <span className="chip" style={{background:"#58a6ff22",color:"#58a6ff"}}>{TWD(dl)} hábiles</span>
+        </div>
+        <div className="card">
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3,marginBottom:4}}>
+            {["L","M","X","J","V","S","D"].map(d=><div key={d} style={{textAlign:"center",fontSize:12,color:C.muted,padding:3,fontWeight:600}}>{d}</div>)}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
+            {cells.map((cell,i)=>{
+              if(!cell) return <div key={`e${i}`}/>;
+              const dow=new Date(yr,m,cell.d).getDay(),isW=dow===0||dow===6;
+              const isH=hols.includes(cell.s),isT=cell.s===todISO;
+              return <div key={cell.s} style={{width:"100%",aspectRatio:1,display:"flex",alignItems:"center",justifyContent:"center",borderRadius:8,fontSize:13,background:isH?"#ff5e5e22":isT?"#58a6ff15":"transparent",color:isH?"#ff5e5e":isW?"#5a6475":C.text,border:isH?"1px solid #ff5e5e44":isT?"1px solid #58a6ff55":"1px solid transparent",fontWeight:isH?"700":"normal"}}>{cell.d}</div>;
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const TABS=[
+    {id:"dash",l:"Dashboard"},{id:"rank",l:"Ranking"},{id:"rend",l:"Rendimiento"},
+    {id:"ventas",l:"Ventas"},{id:"obj",l:"Objetivos"},{id:"feriados",l:"Feriados"},
+  ];
+
+  return (
+    <div style={{fontFamily:"'Segoe UI',sans-serif",minHeight:"100vh",background:C.bg,color:C.text}}>
+      <style>{CSS}</style>
+      <div style={{maxWidth:960,margin:"0 auto",padding:12}}>
+        {/* Header */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div style={{width:28,height:28,background:"linear-gradient(135deg,#238636,#58a6ff)",borderRadius:7,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15}}>📊</div>
+            <div>
+              <div style={{fontWeight:700,fontSize:16}}>VentasTrack</div>
+              {lastLoad&&<div style={{fontSize:11,color:C.faint}}>Actualizado: {lastLoad.toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</div>}
+            </div>
+          </div>
+          <button className="btn-g" style={{fontSize:12,padding:"5px 12px"}} onClick={loadAll}>↻ Actualizar</button>
+        </div>
+        {/* Tabs */}
+        <div style={{display:"flex",overflowX:"auto",borderBottom:`1px solid ${C.border}`,marginBottom:16}}>
+          {TABS.map(t=><button key={t.id} className={`tab ${tab===t.id?"on":""}`} onClick={()=>setTab(t.id)}>{t.l}</button>)}
+        </div>
+        {/* Error */}
+        {error&&<div style={{textAlign:"center",padding:40}}>
+          <div style={{fontSize:32,marginBottom:12}}>⚠️</div>
+          <div style={{color:"#ff5e5e",fontWeight:600,marginBottom:8}}>{error}</div>
+          <button className="btn-g" onClick={loadAll}>↻ Reintentar</button>
+        </div>}
+        {!error&&tab==="dash"&&renderDash()}
+        {!error&&tab==="rank"&&renderRank()}
+        {!error&&tab==="rend"&&renderRendimiento()}
+        {!error&&tab==="ventas"&&renderVentas()}
+        {!error&&tab==="obj"&&renderObj()}
+        {!error&&tab==="feriados"&&renderFeriados()}
+      </div>
+    </div>
+  );
+}
