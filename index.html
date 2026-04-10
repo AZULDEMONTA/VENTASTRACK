@@ -82,7 +82,7 @@
 
     function parseAmt(raw) {
       if (typeof raw==="number") return raw;
-      let s=String(raw).trim().replace(/[$\s]/g,"");
+      let s=String(raw).trim().replace(/[$\s\r]/g,"");
       if (!s||s==="-") return 0;
       if (s.indexOf(",")!==-1&&s.indexOf(".")===-1) s=s.replace(",",".");
       else if (s.indexOf(",")!==-1&&s.indexOf(".")!==-1) s=s.replace(/\./g,"").replace(",",".");
@@ -91,7 +91,7 @@
     }
     function cleanDate(raw) {
       if (!raw) return "";
-      const s=String(raw).trim();
+      const s=String(raw).trim().replace(/\r/g,"");
       if (s.includes("T")) return s.slice(0,10);
       const pts=s.split(/[-/]/);
       if (pts.length===3) {
@@ -103,9 +103,9 @@
     function parseCSV(text) {
       const lines=text.trim().split("\n").filter(Boolean);
       if (lines.length<2) return [];
-      const hdr=lines[0].split(",").map(h=>h.trim().replace(/"/g,"").toLowerCase());
+      const hdr=lines[0].split(",").map(h=>h.trim().replace(/"/g,"").replace(/\r/g,"").toLowerCase());
       return lines.slice(1).map(line=>{
-        const vals=line.split(",").map(v=>v.trim().replace(/"/g,""));
+        const vals=line.split(",").map(v=>v.trim().replace(/"/g,"").replace(/\r/g,""));
         const obj={}; hdr.forEach((h,i)=>obj[h]=vals[i]||""); return obj;
       });
     }
@@ -557,7 +557,7 @@
                     {["Fecha","Vendedor","Cliente","Importe"].map(h=><th key={h} style={{padding:"8px 10px",textAlign:"left",color:C.muted,fontWeight:500}}>{h}</th>)}
                   </tr></thead>
                   <tbody>
-                    {sorted.slice(0,300).map((s,i)=>(
+                    {sorted.slice(0,500).map((s,i)=>(
                       <tr key={i} style={{borderBottom:"1px solid #1e2530"}}>
                         <td style={{padding:"7px 10px",color:C.muted,whiteSpace:"nowrap"}}>{s.date}</td>
                         <td style={{padding:"7px 10px",whiteSpace:"nowrap"}}>{s.seller}</td>
