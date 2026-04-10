@@ -64,6 +64,14 @@
     const fmtPct = n => n.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})+"%";
     const fmtAmt = n => n===0?"$ -":"$ "+Number(n).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0});
 
+    // Parsea año, mes (0-based) y día directo del string ISO "YYYY-MM-DD" sin timezone
+    function parseDateParts(iso) {
+      if (!iso||iso.length<10) return null;
+      const y=+iso.slice(0,4), m=+iso.slice(5,7)-1, d=+iso.slice(8,10);
+      if (isNaN(y)||isNaN(m)||isNaN(d)) return null;
+      return {y,m,d};
+    }
+
     const MONTH_MAP = (()=>{
       const m={};
       ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"]
@@ -156,7 +164,7 @@
             seller:String(fk(r,"vendedor","seller")||"").trim(),
             client:String(fk(r,"cliente","client")||"").trim(),
             amount:parseAmt(fk(r,"importe","amount","monto","total"))
-          })).filter(r=>r.seller&&r.amount>0);
+          })).filter(r=>r.seller&&r.amount>0&&r.date.length>=10);
 
           const goals={}, sellers=[];
           oR.forEach(r=>{
@@ -189,10 +197,10 @@
             const fk3=Object.keys(r).find(k=>/fecha|date/i.test(k));
             const raw=r[fk3]||Object.values(r)[0]||"";
             const f=cleanDate(String(raw).trim()); if(!f) return;
-            const d=new Date(f+"T12:00:00"); if(isNaN(d)) return;
-            const k=hk(d.getMonth(),d.getFullYear());
+            const parts=parseDateParts(f); if(!parts) return;
+            const k=hk(parts.m,parts.y);
             if(!holidays[k]) holidays[k]=[];
-            const iso=isoD(d.getFullYear(),d.getMonth(),d.getDate());
+            const iso=isoD(parts.y,parts.m,parts.d);
             if(!holidays[k].includes(iso)) holidays[k].push(iso);
           });
 
@@ -217,8 +225,10 @@
       const remWD=twd2-elWD;
       const mthPct=twd2?Math.round(elWD/twd2*100):0;
 
+      // ⚠️ FIX: filtrado por partes del string, sin new Date() para evitar timezone
       const monthSales=useMemo(()=>sales.filter(s=>{
-        const d=new Date(s.date);return !isNaN(d)&&d.getMonth()===selMonth&&d.getFullYear()===selYear;
+        const p=parseDateParts(s.date);
+        return p&&p.y===selYear&&p.m===selMonth;
       }),[sales,selMonth,selYear]);
 
       const sellerData=useMemo(()=>sellers.map(seller=>{
@@ -229,7 +239,10 @@
         const exp=goal&&twd2?Math.round(goal/twd2*elWD):0;
         const dailyGoal=twd2>0?Math.round(goal/twd2):0;
         const byDay={};
-        ss.forEach(s=>{const d=new Date(s.date);if(!isNaN(d)) byDay[d.getDate()]=(byDay[d.getDate()]||0)+s.amount;});
+        ss.forEach(s=>{
+          const parts=parseDateParts(s.date);
+          if(parts) byDay[parts.d]=(byDay[parts.d]||0)+s.amount;
+        });
         let cumDias=0,evalDias=0;
         dayList.forEach(day=>{
           if(!day.work||day.d>todDay) return;
@@ -383,8 +396,9 @@
         const tvsExp=tv-(tg&&twd2?Math.round(tg/twd2*elWD):0);
         const billedAmt=billed[bk(m,yr)]||0, billableAmt=billable[bk(m,yr)]||0;
         const backorder=tv-(billedAmt+billableAmt), boPct=tv>0?Math.round(Math.max(0,backorder)/tv*100):0;
+        // ⚠️ FIX: gráfico anual también usa parseDateParts
         const anualData=MS.map((ms,i)=>{
-          const v=sales.filter(s=>{const d=new Date(s.date);return !isNaN(d)&&d.getMonth()===i&&d.getFullYear()===yr;}).reduce((a,b)=>a+b.amount,0);
+          const v=sales.filter(s=>{const p=parseDateParts(s.date);return p&&p.m===i&&p.y===yr;}).reduce((a,b)=>a+b.amount,0);
           return {mes:ms,Vendido:v||null,Facturado:billed[bk(i,yr)]||null,Facturable:billable[bk(i,yr)]||null};
         });
         const vsObjData=sellerData.map((r,i)=>({name:r.seller.split(" ")[0],Venta:r.total,"Obj.acum.":r.goal&&twd2?Math.round(r.goal/twd2*elWD):0,color:COLORS[i%COLORS.length]}));
