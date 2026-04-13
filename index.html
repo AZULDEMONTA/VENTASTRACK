@@ -389,7 +389,7 @@
         const tv=sellerData.reduce((a,b)=>a+b.total,0);
         const tg=sellerData.reduce((a,b)=>a+b.goal,0);
         const tp=pct(tv,tg),tc=sc(tp),tgap=tg-tv;
-        const diff=tp-mthPct; // diferencia entre avance vendedor y avance del mes
+        const diff=tp-mthPct;
         const diffColor=diff>=0?"#00e5a0":"#ff5e5e";
         const tdAvg=elWD?Math.round(tv/elWD):0;
         const tdNeed=tg&&remWD?Math.round(Math.max(0,tgap)/remWD):0;
@@ -409,10 +409,9 @@
             <div className="kv">
               <KCard label="Venta Total" value={fmt(tv)} sub={`${MS[m]} ${yr}`}/>
               <KCard label="Objetivo" value={fmt(tg)} sub="suma vendedores"/>
-              {/* ── AVANCE: muestra la diferencia como número grande ── */}
               <KCard
                 label="Avance"
-                value={<span>{diff>=0?"+":""}{diff}pp</span>}
+                value={<span>{diff>=0?"+":""}{diff}%</span>}
                 color={diffColor}
                 sub={<span><span style={{color:tc}}>{tp}%</span> <span style={{color:C.muted}}>vs</span> <span style={{color:"#58a6ff"}}>{mthPct}%</span> <span style={{color:C.muted}}>mes</span></span>}
               />
@@ -426,9 +425,9 @@
               <div style={{fontSize:13,color:C.sub,marginBottom:8}}>{fmt(tv)} / {fmt(tg)}</div>
               <BP p={tp} color={tc}/>
               <div style={{display:"flex",gap:12,fontSize:12,color:C.muted,flexWrap:"wrap",marginTop:8}}>
-                <span>Resta: <b style={{color:C.sub}}>{fmt(Math.max(0,tgap))}</b></span>
-                <span>Prom/día: <b style={{color:C.sub}}>{fmt(tdAvg)}</b></span>
-                {tgap>0&&remWD>0&&<span>Necesita: <b style={{color:tdNeed<=tdAvg?"#00e5a0":"#f5c542"}}>{fmt(tdNeed)}/día</b></span>}
+                <span>Venta faltante: <b style={{color:C.sub}}>{fmt(Math.max(0,tgap))}</b></span>
+                <span>Venta diaria: <b style={{color:C.sub}}>{fmt(tdAvg)}</b></span>
+                {tgap>0&&remWD>0&&<span>Venta prom. faltante: <b style={{color:tdNeed<=tdAvg?"#00e5a0":"#f5c542"}}>{fmt(tdNeed)}/día</b></span>}
                 <span>vs ritmo: <b style={{color:tvsExp>=0?"#00e5a0":"#ff5e5e"}}>{tvsExp>=0?"+":""}{fmt(tvsExp)}</b></span>
               </div>
             </div>
@@ -489,11 +488,10 @@
               </div>
             </div>
 
-            {/* ── VENDEDORES ── */}
             <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:1,fontWeight:600,marginBottom:8}}>Vendedores</div>
             {sellerData.map(r=>{
               const color=sc(r.p);
-              const vDiff=r.p-mthPct; // diferencia del vendedor vs mes
+              const vDiff=r.p-mthPct;
               const vDiffColor=vDiff>=0?"#00e5a0":"#ff5e5e";
               return (
                 <div key={r.seller} className="card">
@@ -502,13 +500,12 @@
                       <div style={{fontWeight:600,fontSize:14}}>{r.seller}</div>
                       <div style={{color:C.sub,fontSize:12,marginTop:2}}>{fmt(r.total)} / {r.goal?fmt(r.goal):"sin obj."}</div>
                     </div>
-                    {/* % del mes + avance + diferencia */}
                     <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
                       {r.goal>0&&(
                         <div style={{textAlign:"right"}}>
                           <div style={{fontSize:11,color:C.faint}}>mes: <span style={{color:"#58a6ff"}}>{mthPct}%</span></div>
                           <div style={{fontSize:11,color:C.faint,marginTop:1}}>
-                            diff: <span style={{color:vDiffColor,fontWeight:700}}>{vDiff>=0?"+":""}{vDiff}pp</span>
+                            diff: <span style={{color:vDiffColor,fontWeight:700}}>{vDiff>=0?"+":""}{vDiff}%</span>
                           </div>
                         </div>
                       )}
@@ -518,9 +515,9 @@
                   <BP p={r.p} color={color}/>
                   {r.goal>0&&(
                     <div style={{display:"flex",gap:10,fontSize:12,color:C.muted,flexWrap:"wrap",marginTop:6}}>
-                      <span>Resta: <b style={{color:C.sub}}>{fmt(Math.max(0,r.gap))}</b></span>
-                      <span>Prom: <b style={{color:C.sub}}>{fmt(r.dailyAvg)}</b></span>
-                      {r.gap>0&&remWD>0&&<span>Nec: <b style={{color:r.dailyNeed<=r.dailyAvg?"#00e5a0":"#f5c542"}}>{fmt(r.dailyNeed)}/día</b></span>}
+                      <span>Venta diaria: <b style={{color:C.sub}}>{fmt(r.dailyAvg)}</b></span>
+                      <span>Venta faltante: <b style={{color:C.sub}}>{fmt(Math.max(0,r.gap))}</b></span>
+                      {r.gap>0&&remWD>0&&<span>Venta prom. faltante: <b style={{color:r.dailyNeed<=r.dailyAvg?"#00e5a0":"#f5c542"}}>{fmt(r.dailyNeed)}/día</b></span>}
                       {r.vsExp!==0&&<span>vs ritmo: <b style={{color:r.vsExp>=0?"#00e5a0":"#ff5e5e"}}>{r.vsExp>=0?"+":""}{fmt(r.vsExp)}</b></span>}
                     </div>
                   )}
@@ -561,7 +558,7 @@
                     </div>
                     <div style={{display:"flex",flexDirection:"column",gap:3,alignItems:"flex-end",flexShrink:0}}>
                       <span className="chip" style={{background:color+"22",color}}>{r.p}% obj</span>
-                      {r.goal>0&&<span className="chip" style={{background:diff>=0?"#00e5a022":"#ff5e5e22",color:diff>=0?"#00e5a0":"#ff5e5e"}}>{diff>=0?"▲":"▼"}{Math.abs(diff)}pp</span>}
+                      {r.goal>0&&<span className="chip" style={{background:diff>=0?"#00e5a022":"#ff5e5e22",color:diff>=0?"#00e5a0":"#ff5e5e"}}>{diff>=0?"▲":"▼"}{Math.abs(diff)}%</span>}
                       {r.vsExp!==0&&<span className="chip" style={{background:r.vsExp>=0?"#00e5a022":"#ff5e5e22",color:r.vsExp>=0?"#00e5a0":"#ff5e5e"}}>{r.vsExp>=0?"+":""}{fmtK(r.vsExp)}</span>}
                     </div>
                   </div>
