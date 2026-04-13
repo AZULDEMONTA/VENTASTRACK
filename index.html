@@ -64,7 +64,6 @@
     const fmtPct = n => n.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})+"%";
     const fmtAmt = n => n===0?"$ -":"$ "+Number(n).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0});
 
-    // Parsea año, mes (0-based) y día directo del string ISO "YYYY-MM-DD" sin timezone
     function parseDateParts(iso) {
       if (!iso||iso.length<10) return null;
       const y=+iso.slice(0,4), m=+iso.slice(5,7)-1, d=+iso.slice(8,10);
@@ -225,7 +224,6 @@
       const remWD=twd2-elWD;
       const mthPct=twd2?Math.round(elWD/twd2*100):0;
 
-      // ⚠️ FIX: filtrado por partes del string, sin new Date() para evitar timezone
       const monthSales=useMemo(()=>sales.filter(s=>{
         const p=parseDateParts(s.date);
         return p&&p.y===selYear&&p.m===selMonth;
@@ -391,12 +389,13 @@
         const tv=sellerData.reduce((a,b)=>a+b.total,0);
         const tg=sellerData.reduce((a,b)=>a+b.goal,0);
         const tp=pct(tv,tg),tc=sc(tp),tgap=tg-tv;
+        const diff=tp-mthPct; // diferencia entre avance vendedor y avance del mes
+        const diffColor=diff>=0?"#00e5a0":"#ff5e5e";
         const tdAvg=elWD?Math.round(tv/elWD):0;
         const tdNeed=tg&&remWD?Math.round(Math.max(0,tgap)/remWD):0;
         const tvsExp=tv-(tg&&twd2?Math.round(tg/twd2*elWD):0);
         const billedAmt=billed[bk(m,yr)]||0, billableAmt=billable[bk(m,yr)]||0;
         const backorder=tv-(billedAmt+billableAmt), boPct=tv>0?Math.round(Math.max(0,backorder)/tv*100):0;
-        // ⚠️ FIX: gráfico anual también usa parseDateParts
         const anualData=MS.map((ms,i)=>{
           const v=sales.filter(s=>{const p=parseDateParts(s.date);return p&&p.m===i&&p.y===yr;}).reduce((a,b)=>a+b.amount,0);
           return {mes:ms,Vendido:v||null,Facturado:billed[bk(i,yr)]||null,Facturable:billable[bk(i,yr)]||null};
@@ -410,7 +409,13 @@
             <div className="kv">
               <KCard label="Venta Total" value={fmt(tv)} sub={`${MS[m]} ${yr}`}/>
               <KCard label="Objetivo" value={fmt(tg)} sub="suma vendedores"/>
-              <KCard label="Avance" value={`${tp}%`} color={tp>=mthPct?"#00e5a0":"#ff5e5e"} sub={<span><span style={{color:tp>=mthPct?"#00e5a0":"#ff5e5e"}}>{tp}%</span> <span style={{color:C.muted}}>vs</span> <span style={{color:"#58a6ff"}}>{mthPct}%</span> <span style={{color:C.muted}}>mes</span></span>}/>
+              {/* ── AVANCE: muestra la diferencia como número grande ── */}
+              <KCard
+                label="Avance"
+                value={<span>{diff>=0?"+":""}{diff}pp</span>}
+                color={diffColor}
+                sub={<span><span style={{color:tc}}>{tp}%</span> <span style={{color:C.muted}}>vs</span> <span style={{color:"#58a6ff"}}>{mthPct}%</span> <span style={{color:C.muted}}>mes</span></span>}
+              />
               <KCard label="Días hábiles" value={`${elWD}/${twd2}`} sub={`${remWD} restantes`}/>
               <KCard label="Backorder" value={fmt(Math.max(0,backorder))} sub={`${boPct}% del vendido`} color={backorder>0?"#ff5e5e":"#00e5a0"}/>
             </div>
@@ -483,9 +488,13 @@
                 </ResponsiveContainer>
               </div>
             </div>
+
+            {/* ── VENDEDORES ── */}
             <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:1,fontWeight:600,marginBottom:8}}>Vendedores</div>
             {sellerData.map(r=>{
               const color=sc(r.p);
+              const vDiff=r.p-mthPct; // diferencia del vendedor vs mes
+              const vDiffColor=vDiff>=0?"#00e5a0":"#ff5e5e";
               return (
                 <div key={r.seller} className="card">
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
@@ -493,7 +502,18 @@
                       <div style={{fontWeight:600,fontSize:14}}>{r.seller}</div>
                       <div style={{color:C.sub,fontSize:12,marginTop:2}}>{fmt(r.total)} / {r.goal?fmt(r.goal):"sin obj."}</div>
                     </div>
-                    <span style={{fontSize:20,fontWeight:700,color}}>{r.p}%</span>
+                    {/* % del mes + avance + diferencia */}
+                    <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+                      {r.goal>0&&(
+                        <div style={{textAlign:"right"}}>
+                          <div style={{fontSize:11,color:C.faint}}>mes: <span style={{color:"#58a6ff"}}>{mthPct}%</span></div>
+                          <div style={{fontSize:11,color:C.faint,marginTop:1}}>
+                            diff: <span style={{color:vDiffColor,fontWeight:700}}>{vDiff>=0?"+":""}{vDiff}pp</span>
+                          </div>
+                        </div>
+                      )}
+                      <span style={{fontSize:22,fontWeight:700,color}}>{r.p}%</span>
+                    </div>
                   </div>
                   <BP p={r.p} color={color}/>
                   {r.goal>0&&(
