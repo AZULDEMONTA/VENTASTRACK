@@ -37,6 +37,8 @@
     .rtbl th{background:#161b22;color:#a8b3c2;font-weight:600;text-align:center}
     .rtbl .lbl{text-align:left;padding:4px 10px;white-space:nowrap;background:#13181f;color:#a8b3c2;font-size:11px}
     .rtbl .lbl.today{color:#58a6ff;font-weight:700;background:#0d1f33}
+    .seller-btn{background:none;border:1px solid #3a424f;color:#a8b3c2;padding:5px 12px;border-radius:20px;font-size:12px;transition:all .15s}
+    .seller-btn.active{color:#111318;font-weight:600}
     @keyframes spin{to{transform:rotate(360deg)}}
   </style>
 </head>
@@ -49,13 +51,44 @@
     const MONTHS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
     const MS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
     const TODAY = new Date();
-    const COLORS = ["#58a6ff","#00e5a0","#f5c542","#ff5e5e","#b08aff","#ff9f43"];
+
+    // ── Paleta de colores bien diferenciados ──────────────────────
+    const COLORS = [
+      "#4C9BE8", // azul
+      "#2ECC8A", // verde esmeralda
+      "#F0A500", // naranja dorado
+      "#E05C5C", // rojo coral
+      "#A87FDB", // violeta
+      "#00BFAE", // verde agua
+      "#F472B6", // rosa
+      "#6EE7B7", // verde menta
+      "#FB923C", // naranja
+      "#818CF8", // indigo
+    ];
+
     const C = { bg:"#111318", card:"#1a1f28", border:"#2d3440", b2:"#3a424f", text:"#e8edf5", sub:"#d8dfe8", muted:"#a8b3c2", faint:"#7a8799" };
 
     const fmt    = n => !n&&n!==0?"$0":"$"+Number(n).toLocaleString("es-AR",{maximumFractionDigits:0});
-    const fmtK   = n => { if(!n) return "$0"; if(Math.abs(n)>=1e6) return "$"+(n/1e6).toFixed(1)+"M"; if(Math.abs(n)>=1e3) return "$"+(n/1e3).toFixed(0)+"k"; return "$"+n; };
+    // ── fmtK: usa M para millones, k para miles ───────────────────
+    const fmtK   = n => {
+      if(!n) return "$0";
+      const abs=Math.abs(n);
+      if(abs>=1e9) return "$"+(n/1e9).toFixed(1)+"B";
+      if(abs>=1e6) return "$"+(n/1e6).toFixed(1)+"M";
+      if(abs>=1e3) return "$"+(n/1e3).toFixed(0)+"k";
+      return "$"+n;
+    };
+    // ── fmtObj: para tabla de objetivos, sin decimales si es entero ─
+    const fmtObj = n => {
+      if(!n) return "—";
+      const abs=Math.abs(n);
+      if(abs>=1e6){ const v=n/1e6; return "$"+(Number.isInteger(v)?v.toFixed(0):v.toFixed(1))+"M"; }
+      if(abs>=1e3){ const v=n/1e3; return "$"+(Number.isInteger(v)?v.toFixed(0):v.toFixed(1))+"k"; }
+      return "$"+n;
+    };
+
     const pct    = (v,g) => !g?0:Math.round(v/g*100);
-    const sc     = p => p>=100?"#00e5a0":p>=70?"#f5c542":"#ff5e5e";
+    const sc     = p => p>=100?"#2ECC8A":p>=70?"#F0A500":"#E05C5C";
     const dim    = (m,y) => new Date(y,m+1,0).getDate();
     const wknd   = d => { const w=d.getDay(); return w===0||w===6; };
     const isoD   = (y,m,d) => `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
@@ -136,14 +169,15 @@
     };
 
     function App() {
-      const [data,setData]         = useState(null);
-      const [loading,setLoading]   = useState(true);
-      const [error,setError]       = useState(null);
-      const [lastLoad,setLastLoad] = useState(null);
-      const [tab,setTab]           = useState("dash");
-      const [selMonth,setSelMonth] = useState(TODAY.getMonth());
-      const [selYear,setSelYear]   = useState(TODAY.getFullYear());
-      const [rankSort,setRankSort] = useState("pct");
+      const [data,setData]           = useState(null);
+      const [loading,setLoading]     = useState(true);
+      const [error,setError]         = useState(null);
+      const [lastLoad,setLastLoad]   = useState(null);
+      const [tab,setTab]             = useState("dash");
+      const [selMonth,setSelMonth]   = useState(TODAY.getMonth());
+      const [selYear,setSelYear]     = useState(TODAY.getFullYear());
+      const [rankSort,setRankSort]   = useState("pct");
+      const [ventaFilter,setVentaFilter] = useState([]); // vendedores seleccionados en tab ventas
 
       async function loadAll() {
         setLoading(true); setError(null);
@@ -229,7 +263,7 @@
         return p&&p.y===selYear&&p.m===selMonth;
       }),[sales,selMonth,selYear]);
 
-      const sellerData=useMemo(()=>sellers.map(seller=>{
+      const sellerData=useMemo(()=>sellers.map((seller,si)=>{
         const ss=monthSales.filter(s=>s.seller===seller);
         const total=ss.reduce((a,b)=>a+b.amount,0);
         const goal=(goals[seller]&&goals[seller][selMonth])||0;
@@ -248,6 +282,7 @@
           if((byDay[day.d]||0)>=dailyGoal) cumDias++;
         });
         return {seller,total,goal,p,gap,vsExp:total-exp,
+          color:COLORS[si%COLORS.length],
           dailyAvg:elWD?Math.round(total/elWD):0,
           dailyNeed:goal&&remWD?Math.round(Math.max(0,gap)/remWD):0,
           dailyGoal,byDay,cumDias,evalDias,pctDias:evalDias>0?Math.round(cumDias/evalDias*100):0};
@@ -286,7 +321,7 @@
 
       function renderRendimiento() {
         const cellBg  = p => p>=100?"#172217":p>=50?"#231f0e":"#221515";
-        const cellCol = p => p>=100?"#00e5a0":p>=50?"#f5c542":"#ff5e5e";
+        const cellCol = p => p>=100?"#2ECC8A":p>=50?"#F0A500":"#E05C5C";
         const totalGoal=sellerData.reduce((a,b)=>a+b.goal,0);
         const totalDailyGoal=twd2>0?Math.round(totalGoal/twd2):0;
         return (
@@ -297,8 +332,8 @@
                 <thead>
                   <tr>
                     <th style={{padding:"6px 10px",textAlign:"left",minWidth:55,fontSize:11}}>DÍA</th>
-                    {sellerData.map((r,i)=>(
-                      <th key={r.seller} colSpan={2} style={{padding:"6px 10px",color:COLORS[i%COLORS.length],borderLeft:`2px solid ${COLORS[i%COLORS.length]}55`,minWidth:180}}>
+                    {sellerData.map((r)=>(
+                      <th key={r.seller} colSpan={2} style={{padding:"6px 10px",color:r.color,borderLeft:`2px solid ${r.color}55`,minWidth:180}}>
                         {r.seller.toUpperCase()}
                       </th>
                     ))}
@@ -306,22 +341,22 @@
                   </tr>
                   <tr>
                     <th style={{padding:"3px 10px",fontSize:10,color:C.faint,textAlign:"left"}}>OBJETIVO $</th>
-                    {sellerData.map((r,i)=>(
-                      <td key={r.seller} colSpan={2} style={{textAlign:"center",padding:"3px 10px",fontSize:11,color:C.sub,background:"#0f1318",borderLeft:`2px solid ${COLORS[i%COLORS.length]}33`}}>{fmt(r.goal)}</td>
+                    {sellerData.map((r)=>(
+                      <td key={r.seller} colSpan={2} style={{textAlign:"center",padding:"3px 10px",fontSize:11,color:C.sub,background:"#0f1318",borderLeft:`2px solid ${r.color}33`}}>{fmt(r.goal)}</td>
                     ))}
                     <td colSpan={2} style={{textAlign:"center",padding:"3px 10px",fontSize:11,color:C.sub,background:"#0f1318",borderLeft:"2px solid #ffffff22"}}>{fmt(totalGoal)}</td>
                   </tr>
                   <tr>
                     <th style={{padding:"3px 10px",fontSize:10,color:C.faint,textAlign:"left"}}>DIARIO $</th>
-                    {sellerData.map((r,i)=>(
-                      <td key={r.seller} colSpan={2} style={{textAlign:"center",padding:"3px 10px",fontSize:11,color:"#58a6ff",background:"#0f1318",borderLeft:`2px solid ${COLORS[i%COLORS.length]}33`}}>{fmt(r.dailyGoal)}</td>
+                    {sellerData.map((r)=>(
+                      <td key={r.seller} colSpan={2} style={{textAlign:"center",padding:"3px 10px",fontSize:11,color:"#58a6ff",background:"#0f1318",borderLeft:`2px solid ${r.color}33`}}>{fmt(r.dailyGoal)}</td>
                     ))}
                     <td colSpan={2} style={{textAlign:"center",padding:"3px 10px",fontSize:11,color:"#58a6ff",background:"#0f1318",borderLeft:"2px solid #ffffff22"}}>{fmt(totalDailyGoal)}</td>
                   </tr>
                   <tr>
                     <th style={{padding:"5px 10px",fontSize:10}}></th>
-                    {sellerData.map((r,i)=>[
-                      <th key={`${r.seller}-v`} style={{padding:"5px 8px",fontSize:10,color:C.faint,borderLeft:`2px solid ${COLORS[i%COLORS.length]}33`}}>Venta ($)</th>,
+                    {sellerData.map((r)=>[
+                      <th key={`${r.seller}-v`} style={{padding:"5px 8px",fontSize:10,color:C.faint,borderLeft:`2px solid ${r.color}33`}}>Venta ($)</th>,
                       <th key={`${r.seller}-p`} style={{padding:"5px 8px",fontSize:10,color:C.faint}}>% Obj.</th>
                     ])}
                     <th style={{padding:"5px 8px",fontSize:10,color:C.faint,borderLeft:"2px solid #ffffff22"}}>Total ($)</th>
@@ -337,11 +372,11 @@
                     return (
                       <tr key={day.s} style={{background:isToday?"#0c1d30":"transparent"}}>
                         <td className={`lbl${isToday?" today":""}`}>{label}</td>
-                        {sellerData.map((r,i)=>{
+                        {sellerData.map((r)=>{
                           const venta=r.byDay[day.d]||0;
                           const vPct=r.dailyGoal>0?(venta/r.dailyGoal*100):0;
                           return [
-                            <td key={`${r.seller}-v`} style={{padding:"4px 8px",fontSize:12,textAlign:"right",background:isPast?cellBg(vPct):"transparent",color:isPast?C.sub:C.faint,borderLeft:`2px solid ${COLORS[i%COLORS.length]}22`}}>{isPast?fmtAmt(venta):"-"}</td>,
+                            <td key={`${r.seller}-v`} style={{padding:"4px 8px",fontSize:12,textAlign:"right",background:isPast?cellBg(vPct):"transparent",color:isPast?C.sub:C.faint,borderLeft:`2px solid ${r.color}22`}}>{isPast?fmtAmt(venta):"-"}</td>,
                             <td key={`${r.seller}-p`} style={{padding:"4px 8px",fontSize:12,textAlign:"right",background:isPast?cellBg(vPct):"transparent",color:isPast?cellCol(vPct):C.faint,fontWeight:isPast&&vPct>0?"600":"normal"}}>{isPast?fmtPct(vPct):"-"}</td>
                           ];
                         })}
@@ -352,10 +387,10 @@
                   })}
                   <tr style={{borderTop:`2px solid ${C.border}`}}>
                     <td style={{padding:"6px 10px",fontSize:12,fontWeight:700,color:"#f5c542",background:"#1c1f12",textAlign:"left"}}>ACUMULADO</td>
-                    {sellerData.map((r,i)=>{
+                    {sellerData.map((r)=>{
                       const tp=r.goal>0?(r.total/r.goal*100):0;
                       return [
-                        <td key={`${r.seller}-av`} style={{padding:"6px 8px",fontSize:12,fontWeight:700,color:"#f5c542",background:"#1c1f12",borderLeft:`2px solid ${COLORS[i%COLORS.length]}44`,textAlign:"right"}}>{fmtAmt(r.total)}</td>,
+                        <td key={`${r.seller}-av`} style={{padding:"6px 8px",fontSize:12,fontWeight:700,color:"#f5c542",background:"#1c1f12",borderLeft:`2px solid ${r.color}44`,textAlign:"right"}}>{fmtAmt(r.total)}</td>,
                         <td key={`${r.seller}-ap`} style={{padding:"6px 8px",fontSize:12,fontWeight:700,color:cellCol(tp),background:"#1c1f12",textAlign:"right"}}>{fmtPct(tp)}</td>
                       ];
                     })}
@@ -373,7 +408,7 @@
               </table>
             </div>
             <div style={{display:"flex",gap:14,fontSize:11,marginTop:12,flexWrap:"wrap"}}>
-              {[{bg:"#172217",col:"#00e5a0",label:"≥ 100%"},{bg:"#231f0e",col:"#f5c542",label:"50–99%"},{bg:"#221515",col:"#ff5e5e",label:"< 50% o sin venta"}].map(l=>(
+              {[{bg:"#172217",col:"#2ECC8A",label:"≥ 100%"},{bg:"#231f0e",col:"#F0A500",label:"50–99%"},{bg:"#221515",col:"#E05C5C",label:"< 50% o sin venta"}].map(l=>(
                 <span key={l.label} style={{display:"flex",alignItems:"center",gap:5}}>
                   <span style={{width:10,height:10,borderRadius:2,background:l.bg,border:`1px solid ${l.col}55`,display:"inline-block"}}/>
                   <span style={{color:l.col}}>{l.label}</span>
@@ -390,7 +425,7 @@
         const tg=sellerData.reduce((a,b)=>a+b.goal,0);
         const tp=pct(tv,tg),tc=sc(tp),tgap=tg-tv;
         const diff=tp-mthPct;
-        const diffColor=diff>=0?"#00e5a0":"#ff5e5e";
+        const diffColor=diff>=0?"#2ECC8A":"#E05C5C";
         const tdAvg=elWD?Math.round(tv/elWD):0;
         const tdNeed=tg&&remWD?Math.round(Math.max(0,tgap)/remWD):0;
         const tvsExp=tv-(tg&&twd2?Math.round(tg/twd2*elWD):0);
@@ -400,8 +435,8 @@
           const v=sales.filter(s=>{const p=parseDateParts(s.date);return p&&p.m===i&&p.y===yr;}).reduce((a,b)=>a+b.amount,0);
           return {mes:ms,Vendido:v||null,Facturado:billed[bk(i,yr)]||null,Facturable:billable[bk(i,yr)]||null};
         });
-        const vsObjData=sellerData.map((r,i)=>({name:r.seller.split(" ")[0],Venta:r.total,"Obj.acum.":r.goal&&twd2?Math.round(r.goal/twd2*elWD):0,color:COLORS[i%COLORS.length]}));
-        const pieData=sellerData.filter(r=>r.total>0).map((r,i)=>({name:r.seller.split(" ")[0],value:r.total,color:COLORS[i%COLORS.length]}));
+        const vsObjData=sellerData.map((r)=>({name:r.seller.split(" ")[0],Venta:r.total,"Obj.acum.":r.goal&&twd2?Math.round(r.goal/twd2*elWD):0,color:r.color}));
+        const pieData=sellerData.filter(r=>r.total>0).map((r)=>({name:r.seller.split(" ")[0],value:r.total,color:r.color}));
         return (
           <div>
             <PeriodSel/>
@@ -409,14 +444,10 @@
             <div className="kv">
               <KCard label="Venta Total" value={fmt(tv)} sub={`${MS[m]} ${yr}`}/>
               <KCard label="Objetivo" value={fmt(tg)} sub="suma vendedores"/>
-              <KCard
-                label="Avance"
-                value={<span>{diff>=0?"+":""}{diff}%</span>}
-                color={diffColor}
-                sub={<span><span style={{color:tc}}>{tp}%</span> <span style={{color:C.muted}}>vs</span> <span style={{color:"#58a6ff"}}>{mthPct}%</span> <span style={{color:C.muted}}>mes</span></span>}
-              />
+              <KCard label="Avance" value={<span>{diff>=0?"+":""}{diff}%</span>} color={diffColor}
+                sub={<span><span style={{color:tc}}>{tp}%</span> <span style={{color:C.muted}}>vs</span> <span style={{color:"#58a6ff"}}>{mthPct}%</span> <span style={{color:C.muted}}>mes</span></span>}/>
               <KCard label="Días hábiles" value={`${elWD}/${twd2}`} sub={`${remWD} restantes`}/>
-              <KCard label="Backorder" value={fmt(Math.max(0,backorder))} sub={`${boPct}% del vendido`} color={backorder>0?"#ff5e5e":"#00e5a0"}/>
+              <KCard label="Backorder" value={fmt(Math.max(0,backorder))} sub={`${boPct}% del vendido`} color={backorder>0?"#E05C5C":"#2ECC8A"}/>
             </div>
             <div className="card" style={{borderColor:tc+"44"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,flexWrap:"wrap",gap:6}}>
@@ -427,18 +458,18 @@
               <div style={{display:"flex",gap:12,fontSize:12,color:C.muted,flexWrap:"wrap",marginTop:8}}>
                 <span>Venta faltante: <b style={{color:C.sub}}>{fmt(Math.max(0,tgap))}</b></span>
                 <span>Venta diaria: <b style={{color:C.sub}}>{fmt(tdAvg)}</b></span>
-                {tgap>0&&remWD>0&&<span>Venta prom. faltante: <b style={{color:tdNeed<=tdAvg?"#00e5a0":"#f5c542"}}>{fmt(tdNeed)}/día</b></span>}
-                <span>vs ritmo: <b style={{color:tvsExp>=0?"#00e5a0":"#ff5e5e"}}>{tvsExp>=0?"+":""}{fmt(tvsExp)}</b></span>
+                {tgap>0&&remWD>0&&<span>Venta prom. faltante: <b style={{color:tdNeed<=tdAvg?"#2ECC8A":"#F0A500"}}>{fmt(tdNeed)}/día</b></span>}
+                <span>vs ritmo: <b style={{color:tvsExp>=0?"#2ECC8A":"#E05C5C"}}>{tvsExp>=0?"+":""}{fmt(tvsExp)}</b></span>
               </div>
             </div>
             <div className="card">
               <b style={{display:"block",marginBottom:10}}>Facturado · Facturable · Backorder</b>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 {[
-                  {label:"Vendido",val:tv,color:"#58a6ff",sub:"100%"},
-                  {label:"Facturado",val:billedAmt,color:"#2ea043",sub:tv?`${Math.round(billedAmt/tv*100)}%`:"—"},
-                  {label:"Facturable",val:billableAmt,color:"#b08aff",sub:tv?`${Math.round(billableAmt/tv*100)}%`:"—"},
-                  {label:"Backorder",val:Math.abs(backorder),color:backorder>0?"#ff5e5e":"#00e5a0",sub:backorder>0?`${boPct}% sin destino`:"todo asignado"},
+                  {label:"Vendido",val:tv,color:"#4C9BE8",sub:"100%"},
+                  {label:"Facturado",val:billedAmt,color:"#2ECC8A",sub:tv?`${Math.round(billedAmt/tv*100)}%`:"—"},
+                  {label:"Facturable",val:billableAmt,color:"#A87FDB",sub:tv?`${Math.round(billableAmt/tv*100)}%`:"—"},
+                  {label:"Backorder",val:Math.abs(backorder),color:backorder>0?"#E05C5C":"#2ECC8A",sub:backorder>0?`${boPct}% sin destino`:"todo asignado"},
                 ].map(b2=>(
                   <div key={b2.label} style={{background:C.bg,borderRadius:10,padding:"10px 12px",borderLeft:`3px solid ${b2.color}`}}>
                     <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>{b2.label}</div>
@@ -455,9 +486,9 @@
                   <XAxis dataKey="mes" tick={{fill:C.muted,fontSize:10}} axisLine={false} tickLine={false}/>
                   <YAxis tickFormatter={fmtK} tick={{fill:C.muted,fontSize:10}} axisLine={false} tickLine={false} width={48}/>
                   <Tooltip content={<TTip/>}/><Legend wrapperStyle={{fontSize:11,color:C.muted}}/>
-                  <Bar dataKey="Vendido" fill="#58a6ff" radius={[4,4,0,0]}/>
-                  <Bar dataKey="Facturado" fill="#2ea043" radius={[4,4,0,0]}/>
-                  <Bar dataKey="Facturable" fill="#b08aff" radius={[4,4,0,0]}/>
+                  <Bar dataKey="Vendido" fill="#4C9BE8" radius={[4,4,0,0]}/>
+                  <Bar dataKey="Facturado" fill="#2ECC8A" radius={[4,4,0,0]}/>
+                  <Bar dataKey="Facturable" fill="#A87FDB" radius={[4,4,0,0]}/>
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -492,9 +523,9 @@
             {sellerData.map(r=>{
               const color=sc(r.p);
               const vDiff=r.p-mthPct;
-              const vDiffColor=vDiff>=0?"#00e5a0":"#ff5e5e";
+              const vDiffColor=vDiff>=0?"#2ECC8A":"#E05C5C";
               return (
-                <div key={r.seller} className="card">
+                <div key={r.seller} className="card" style={{borderLeft:`3px solid ${r.color}`}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
                     <div>
                       <div style={{fontWeight:600,fontSize:14}}>{r.seller}</div>
@@ -504,21 +535,19 @@
                       {r.goal>0&&(
                         <div style={{textAlign:"right"}}>
                           <div style={{fontSize:11,color:C.faint}}>mes: <span style={{color:"#58a6ff"}}>{mthPct}%</span></div>
-                          <div style={{fontSize:11,color:C.faint,marginTop:1}}>
-                            diff: <span style={{color:vDiffColor,fontWeight:700}}>{vDiff>=0?"+":""}{vDiff}%</span>
-                          </div>
+                          <div style={{fontSize:11,color:C.faint,marginTop:1}}>diff: <span style={{color:vDiffColor,fontWeight:700}}>{vDiff>=0?"+":""}{vDiff}%</span></div>
                         </div>
                       )}
                       <span style={{fontSize:22,fontWeight:700,color}}>{r.p}%</span>
                     </div>
                   </div>
-                  <BP p={r.p} color={color}/>
+                  <BP p={r.p} color={r.color}/>
                   {r.goal>0&&(
                     <div style={{display:"flex",gap:10,fontSize:12,color:C.muted,flexWrap:"wrap",marginTop:6}}>
                       <span>Venta diaria: <b style={{color:C.sub}}>{fmt(r.dailyAvg)}</b></span>
                       <span>Venta faltante: <b style={{color:C.sub}}>{fmt(Math.max(0,r.gap))}</b></span>
-                      {r.gap>0&&remWD>0&&<span>Venta prom. faltante: <b style={{color:r.dailyNeed<=r.dailyAvg?"#00e5a0":"#f5c542"}}>{fmt(r.dailyNeed)}/día</b></span>}
-                      {r.vsExp!==0&&<span>vs ritmo: <b style={{color:r.vsExp>=0?"#00e5a0":"#ff5e5e"}}>{r.vsExp>=0?"+":""}{fmt(r.vsExp)}</b></span>}
+                      {r.gap>0&&remWD>0&&<span>Venta prom. faltante: <b style={{color:r.dailyNeed<=r.dailyAvg?"#2ECC8A":"#F0A500"}}>{fmt(r.dailyNeed)}/día</b></span>}
+                      {r.vsExp!==0&&<span>vs ritmo: <b style={{color:r.vsExp>=0?"#2ECC8A":"#E05C5C"}}>{r.vsExp>=0?"+":""}{fmt(r.vsExp)}</b></span>}
                     </div>
                   )}
                 </div>
@@ -548,18 +577,18 @@
                 const color=sc(r.p),diff=r.p-mthPct;
                 return (
                   <div key={r.seller} style={{display:"flex",alignItems:"center",gap:10,padding:"14px 0",borderBottom:i<rows.length-1?`1px solid ${C.border}`:"none"}}>
-                    <div style={{width:28,textAlign:"center",flexShrink:0,fontSize:i<3?18:13,color:i<3?"#f5c542":C.muted,fontWeight:700}}>{i<3?medals[i]:`#${i+1}`}</div>
+                    <div style={{width:28,textAlign:"center",flexShrink:0,fontSize:i<3?18:13,color:i<3?"#F0A500":C.muted,fontWeight:700}}>{i<3?medals[i]:`#${i+1}`}</div>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                        <span style={{fontWeight:600}}>{r.seller}</span>
+                        <span style={{fontWeight:600,color:r.color}}>{r.seller}</span>
                         <span style={{color:C.sub}}>{fmt(r.total)}</span>
                       </div>
-                      <div className="pbg" style={{height:6}}><div className="pfill" style={{width:`${Math.round(r.total/maxT*100)}%`,height:6,background:color}}/></div>
+                      <div className="pbg" style={{height:6}}><div className="pfill" style={{width:`${Math.round(r.total/maxT*100)}%`,height:6,background:r.color}}/></div>
                     </div>
                     <div style={{display:"flex",flexDirection:"column",gap:3,alignItems:"flex-end",flexShrink:0}}>
                       <span className="chip" style={{background:color+"22",color}}>{r.p}% obj</span>
-                      {r.goal>0&&<span className="chip" style={{background:diff>=0?"#00e5a022":"#ff5e5e22",color:diff>=0?"#00e5a0":"#ff5e5e"}}>{diff>=0?"▲":"▼"}{Math.abs(diff)}%</span>}
-                      {r.vsExp!==0&&<span className="chip" style={{background:r.vsExp>=0?"#00e5a022":"#ff5e5e22",color:r.vsExp>=0?"#00e5a0":"#ff5e5e"}}>{r.vsExp>=0?"+":""}{fmtK(r.vsExp)}</span>}
+                      {r.goal>0&&<span className="chip" style={{background:diff>=0?"#2ECC8A22":"#E05C5C22",color:diff>=0?"#2ECC8A":"#E05C5C"}}>{diff>=0?"▲":"▼"}{Math.abs(diff)}%</span>}
+                      {r.vsExp!==0&&<span className="chip" style={{background:r.vsExp>=0?"#2ECC8A22":"#E05C5C22",color:r.vsExp>=0?"#2ECC8A":"#E05C5C"}}>{r.vsExp>=0?"+":""}{fmtK(r.vsExp)}</span>}
                     </div>
                   </div>
                 );
@@ -570,15 +599,52 @@
       }
 
       function renderVentas(){
-        const sorted=[...monthSales].sort((a,b)=>a.date<b.date?1:-1);
+        // Toggle vendedor en el filtro
+        const toggleSeller = s => {
+          setVentaFilter(prev => prev.includes(s) ? prev.filter(x=>x!==s) : [...prev,s]);
+        };
+
+        const sorted=[...monthSales]
+          .filter(s => ventaFilter.length===0 || ventaFilter.includes(s.seller))
+          .sort((a,b)=>a.date<b.date?1:-1);
         const total=sorted.reduce((a,b)=>a+b.amount,0);
+
         return (
           <div style={{maxWidth:700}}>
             <h2 style={{fontSize:16,fontWeight:700,marginBottom:8}}>Ventas del período</h2>
             <PeriodSel/>
+
+            {/* Filtro por vendedor */}
+            {sellers.length>0&&(
+              <div style={{marginBottom:12}}>
+                <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:.6,marginBottom:6}}>Filtrar por vendedor</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {sellers.map((s,i)=>{
+                    const active=ventaFilter.includes(s);
+                    const col=COLORS[i%COLORS.length];
+                    return (
+                      <button key={s} onClick={()=>toggleSeller(s)}
+                        style={{background:active?col:"none",border:`1px solid ${col}`,
+                          color:active?"#111318":col,padding:"5px 12px",borderRadius:20,
+                          fontSize:12,fontWeight:active?"600":"normal",transition:"all .15s",cursor:"pointer"}}>
+                        {s}
+                      </button>
+                    );
+                  })}
+                  {ventaFilter.length>0&&(
+                    <button onClick={()=>setVentaFilter([])}
+                      style={{background:"none",border:`1px solid ${C.b2}`,color:C.muted,
+                        padding:"5px 12px",borderRadius:20,fontSize:12,cursor:"pointer"}}>
+                      Limpiar ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-              <span style={{color:C.sub}}><b style={{color:C.text}}>{sorted.length}</b> registros</span>
-              <span style={{color:"#2ea043",fontWeight:700}}>{fmt(total)}</span>
+              <span style={{color:C.sub}}><b style={{color:C.text}}>{sorted.length}</b> registros{ventaFilter.length>0?` (filtrado)`:""}</span>
+              <span style={{color:"#2ECC8A",fontWeight:700}}>{fmt(total)}</span>
             </div>
             {sorted.length===0
               ?<div className="card" style={{textAlign:"center",padding:28,color:C.muted}}>Sin ventas en este período.</div>
@@ -588,14 +654,18 @@
                     {["Fecha","Vendedor","Cliente","Importe"].map(h=><th key={h} style={{padding:"8px 10px",textAlign:"left",color:C.muted,fontWeight:500}}>{h}</th>)}
                   </tr></thead>
                   <tbody>
-                    {sorted.slice(0,500).map((s,i)=>(
-                      <tr key={i} style={{borderBottom:"1px solid #1e2530"}}>
-                        <td style={{padding:"7px 10px",color:C.muted,whiteSpace:"nowrap"}}>{s.date}</td>
-                        <td style={{padding:"7px 10px",whiteSpace:"nowrap"}}>{s.seller}</td>
-                        <td style={{padding:"7px 10px",color:C.muted,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.client||"—"}</td>
-                        <td style={{padding:"7px 10px",color:"#2ea043",fontWeight:600,whiteSpace:"nowrap"}}>{fmt(s.amount)}</td>
-                      </tr>
-                    ))}
+                    {sorted.slice(0,500).map((s,i)=>{
+                      const si=sellers.indexOf(s.seller);
+                      const col=si>=0?COLORS[si%COLORS.length]:C.muted;
+                      return (
+                        <tr key={i} style={{borderBottom:"1px solid #1e2530"}}>
+                          <td style={{padding:"7px 10px",color:C.muted,whiteSpace:"nowrap"}}>{s.date}</td>
+                          <td style={{padding:"7px 10px",whiteSpace:"nowrap",color:col,fontWeight:500}}>{s.seller}</td>
+                          <td style={{padding:"7px 10px",color:C.muted,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.client||"—"}</td>
+                          <td style={{padding:"7px 10px",color:"#2ECC8A",fontWeight:600,whiteSpace:"nowrap"}}>{fmt(s.amount)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -612,19 +682,23 @@
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
                 <thead><tr style={{borderBottom:`1px solid ${C.border}`}}>
                   <th style={{padding:"8px 10px",textAlign:"left",color:C.muted,fontWeight:500,position:"sticky",left:0,background:C.card,zIndex:2}}>Vendedor</th>
-                  {MS.map((m,i)=><th key={i} style={{padding:"8px 5px",textAlign:"center",color:i===selMonth?"#58a6ff":C.muted,fontWeight:500,minWidth:44}}>{m}</th>)}
+                  {MS.map((m,i)=><th key={i} style={{padding:"8px 5px",textAlign:"center",color:i===selMonth?"#58a6ff":C.muted,fontWeight:500,minWidth:52}}>{m}</th>)}
                 </tr></thead>
                 <tbody>
-                  {sellers.map(seller=>{
+                  {sellers.map((seller,si)=>{
                     const r=sellerData.find(x=>x.seller===seller)||{total:0,p:0};
+                    const col=COLORS[si%COLORS.length];
                     return (
                       <tr key={seller} style={{borderBottom:"1px solid #1e2530"}}>
-                        <td style={{padding:"8px 10px",fontWeight:500,whiteSpace:"nowrap",position:"sticky",left:0,background:C.card,zIndex:1}}>{seller}</td>
+                        <td style={{padding:"8px 10px",fontWeight:500,whiteSpace:"nowrap",position:"sticky",left:0,background:C.card,zIndex:1,color:col}}>{seller}</td>
                         {MONTHS.map((_,mo)=>{
                           const g=goals[seller]&&goals[seller][mo];
-                          const color=sc(pct(mo===selMonth?r.total:0,g||0));
+                          const perf=sc(pct(mo===selMonth?r.total:0,g||0));
                           return <td key={mo} style={{textAlign:"center",padding:"6px 4px"}}>
-                            {g?<span style={{fontSize:12,fontWeight:600,color:mo===selMonth?color:"#2ea043"}}>${(g/1000).toFixed(0)}k</span>:<span style={{color:C.faint,fontSize:12}}>—</span>}
+                            {g
+                              ? <span style={{fontSize:12,fontWeight:600,color:mo===selMonth?perf:C.sub}}>{fmtObj(g)}</span>
+                              : <span style={{color:C.faint,fontSize:12}}>—</span>
+                            }
                           </td>;
                         })}
                       </tr>
@@ -651,8 +725,8 @@
                 {MONTHS.map((mo,i)=><option key={i} value={i}>{mo}</option>)}
               </select>
               <input type="number" value={yr} onChange={e=>setSelYear(+e.target.value)} style={{width:72}}/>
-              <span className="chip" style={{background:"#ff5e5e22",color:"#ff5e5e"}}>{hols.length} feriados</span>
-              <span className="chip" style={{background:"#58a6ff22",color:"#58a6ff"}}>{TWD(dl)} hábiles</span>
+              <span className="chip" style={{background:"#E05C5C22",color:"#E05C5C"}}>{hols.length} feriados</span>
+              <span className="chip" style={{background:"#4C9BE822",color:"#4C9BE8"}}>{TWD(dl)} hábiles</span>
             </div>
             <div className="card">
               <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3,marginBottom:4}}>
@@ -663,7 +737,7 @@
                   if(!cell) return <div key={`e${i}`}/>;
                   const dow=new Date(yr,m,cell.d).getDay(),isW=dow===0||dow===6;
                   const isH=hols.includes(cell.s),isT=cell.s===todISO;
-                  return <div key={cell.s} style={{width:"100%",aspectRatio:1,display:"flex",alignItems:"center",justifyContent:"center",borderRadius:8,fontSize:13,background:isH?"#ff5e5e22":isT?"#58a6ff15":"transparent",color:isH?"#ff5e5e":isW?"#5a6475":C.text,border:isH?"1px solid #ff5e5e44":isT?"1px solid #58a6ff55":"1px solid transparent",fontWeight:isH?"700":"normal"}}>{cell.d}</div>;
+                  return <div key={cell.s} style={{width:"100%",aspectRatio:1,display:"flex",alignItems:"center",justifyContent:"center",borderRadius:8,fontSize:13,background:isH?"#E05C5C22":isT?"#4C9BE815":"transparent",color:isH?"#E05C5C":isW?"#5a6475":C.text,border:isH?"1px solid #E05C5C44":isT?"1px solid #4C9BE855":"1px solid transparent",fontWeight:isH?"700":"normal"}}>{cell.d}</div>;
                 })}
               </div>
             </div>
@@ -681,7 +755,7 @@
           <div style={{maxWidth:960,margin:"0 auto",padding:12}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <div style={{width:28,height:28,background:"linear-gradient(135deg,#238636,#58a6ff)",borderRadius:7,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15}}>📊</div>
+                <div style={{width:28,height:28,background:"linear-gradient(135deg,#2ECC8A,#4C9BE8)",borderRadius:7,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15}}>📊</div>
                 <div>
                   <div style={{fontWeight:700,fontSize:16}}>VentasTrack</div>
                   {lastLoad&&<div style={{fontSize:11,color:C.faint}}>Actualizado: {lastLoad.toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</div>}
@@ -694,7 +768,7 @@
             </div>
             {error&&<div style={{textAlign:"center",padding:40}}>
               <div style={{fontSize:32,marginBottom:12}}>⚠️</div>
-              <div style={{color:"#ff5e5e",fontWeight:600,marginBottom:8}}>{error}</div>
+              <div style={{color:"#E05C5C",fontWeight:600,marginBottom:8}}>{error}</div>
               <button className="btn-g" onClick={loadAll}>↻ Reintentar</button>
             </div>}
             {!error&&tab==="dash"&&renderDash()}
