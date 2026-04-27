@@ -37,8 +37,6 @@
     .rtbl th{background:#161b22;color:#a8b3c2;font-weight:600;text-align:center}
     .rtbl .lbl{text-align:left;padding:4px 10px;white-space:nowrap;background:#13181f;color:#a8b3c2;font-size:11px}
     .rtbl .lbl.today{color:#58a6ff;font-weight:700;background:#0d1f33}
-    .seller-btn{background:none;border:1px solid #3a424f;color:#a8b3c2;padding:5px 12px;border-radius:20px;font-size:12px;transition:all .15s}
-    .seller-btn.active{color:#111318;font-weight:600}
     @keyframes spin{to{transform:rotate(360deg)}}
   </style>
 </head>
@@ -51,25 +49,17 @@
     const MONTHS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
     const MS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
     const TODAY = new Date();
+    const CUR_MONTH = TODAY.getMonth();
+    const CUR_YEAR  = TODAY.getFullYear();
 
-    // ── Paleta de colores bien diferenciados ──────────────────────
     const COLORS = [
-      "#4C9BE8", // azul
-      "#2ECC8A", // verde esmeralda
-      "#F0A500", // naranja dorado
-      "#E05C5C", // rojo coral
-      "#A87FDB", // violeta
-      "#00BFAE", // verde agua
-      "#F472B6", // rosa
-      "#6EE7B7", // verde menta
-      "#FB923C", // naranja
-      "#818CF8", // indigo
+      "#4C9BE8","#2ECC8A","#F0A500","#E05C5C","#A87FDB",
+      "#00BFAE","#F472B6","#6EE7B7","#FB923C","#818CF8",
     ];
 
     const C = { bg:"#111318", card:"#1a1f28", border:"#2d3440", b2:"#3a424f", text:"#e8edf5", sub:"#d8dfe8", muted:"#a8b3c2", faint:"#7a8799" };
 
     const fmt    = n => !n&&n!==0?"$0":"$"+Number(n).toLocaleString("es-AR",{maximumFractionDigits:0});
-    // ── fmtK: usa M para millones, k para miles ───────────────────
     const fmtK   = n => {
       if(!n) return "$0";
       const abs=Math.abs(n);
@@ -78,17 +68,17 @@
       if(abs>=1e3) return "$"+(n/1e3).toFixed(0)+"k";
       return "$"+n;
     };
-    // ── fmtObj: para tabla de objetivos, sin decimales si es entero ─
     const fmtObj = n => {
       if(!n) return "—";
       const abs=Math.abs(n);
-      if(abs>=1e6){ const v=n/1e6; return "$"+(Number.isInteger(v)?v.toFixed(0):v.toFixed(1))+"M"; }
-      if(abs>=1e3){ const v=n/1e3; return "$"+(Number.isInteger(v)?v.toFixed(0):v.toFixed(1))+"k"; }
+      if(abs>=1e6){ const v=n/1e6; return "$"+(Number.isInteger(v*10)?v.toFixed(v%1===0?0:1):v.toFixed(1))+"M"; }
+      if(abs>=1e3){ const v=n/1e3; return "$"+(Number.isInteger(v*10)?v.toFixed(v%1===0?0:1):v.toFixed(1))+"k"; }
       return "$"+n;
     };
 
     const pct    = (v,g) => !g?0:Math.round(v/g*100);
     const sc     = p => p>=100?"#2ECC8A":p>=70?"#F0A500":"#E05C5C";
+    const scBg   = p => p>=100?"#172217":p>=70?"#231f0e":"#221515";
     const dim    = (m,y) => new Date(y,m+1,0).getDate();
     const wknd   = d => { const w=d.getDay(); return w===0||w===6; };
     const isoD   = (y,m,d) => `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
@@ -169,15 +159,15 @@
     };
 
     function App() {
-      const [data,setData]           = useState(null);
-      const [loading,setLoading]     = useState(true);
-      const [error,setError]         = useState(null);
-      const [lastLoad,setLastLoad]   = useState(null);
-      const [tab,setTab]             = useState("dash");
-      const [selMonth,setSelMonth]   = useState(TODAY.getMonth());
-      const [selYear,setSelYear]     = useState(TODAY.getFullYear());
-      const [rankSort,setRankSort]   = useState("pct");
-      const [ventaFilter,setVentaFilter] = useState([]); // vendedores seleccionados en tab ventas
+      const [data,setData]               = useState(null);
+      const [loading,setLoading]         = useState(true);
+      const [error,setError]             = useState(null);
+      const [lastLoad,setLastLoad]       = useState(null);
+      const [tab,setTab]                 = useState("dash");
+      const [selMonth,setSelMonth]       = useState(CUR_MONTH);
+      const [selYear,setSelYear]         = useState(CUR_YEAR);
+      const [rankSort,setRankSort]       = useState("pct");
+      const [ventaFilter,setVentaFilter] = useState([]);
 
       async function loadAll() {
         setLoading(true); setError(null);
@@ -218,7 +208,7 @@
             const mi=MONTH_MAP[String(r[mk]||"").toLowerCase().trim()];
             if(mi===undefined) return;
             const yk=Object.keys(r).find(k=>/a.o|anio|ano|year/i.test(k)||k.toLowerCase().trim()==="año");
-            const yr=parseInt(String(r[yk]||"").trim(),10)||TODAY.getFullYear();
+            const yr=parseInt(String(r[yk]||"").trim(),10)||CUR_YEAR;
             const fk2=Object.keys(r).find(k=>/facturado|billed/i.test(k)&&!/facturable/i.test(k));
             const lk=Object.keys(r).find(k=>/facturable|billable/i.test(k));
             if(fk2) billed[bk(mi,yr)]=parseAmt(r[fk2]);
@@ -252,7 +242,7 @@
       const dayList=useMemo(()=>buildDays(selMonth,selYear,getHols(selMonth,selYear)),[selMonth,selYear,data]);
       const workDays=useMemo(()=>dayList.filter(d=>d.work),[dayList]);
       const twd2=useMemo(()=>TWD(dayList),[dayList]);
-      const isCur=selMonth===TODAY.getMonth()&&selYear===TODAY.getFullYear();
+      const isCur=selMonth===CUR_MONTH&&selYear===CUR_YEAR;
       const todDay=isCur?TODAY.getDate():dim(selMonth,selYear);
       const elWD=useMemo(()=>wdTo(dayList,todDay),[dayList,todDay]);
       const remWD=twd2-elWD;
@@ -518,7 +508,6 @@
                 </ResponsiveContainer>
               </div>
             </div>
-
             <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:1,fontWeight:600,marginBottom:8}}>Vendedores</div>
             {sellerData.map(r=>{
               const color=sc(r.p);
@@ -599,22 +588,15 @@
       }
 
       function renderVentas(){
-        // Toggle vendedor en el filtro
-        const toggleSeller = s => {
-          setVentaFilter(prev => prev.includes(s) ? prev.filter(x=>x!==s) : [...prev,s]);
-        };
-
+        const toggleSeller = s => setVentaFilter(prev=>prev.includes(s)?prev.filter(x=>x!==s):[...prev,s]);
         const sorted=[...monthSales]
-          .filter(s => ventaFilter.length===0 || ventaFilter.includes(s.seller))
+          .filter(s=>ventaFilter.length===0||ventaFilter.includes(s.seller))
           .sort((a,b)=>a.date<b.date?1:-1);
         const total=sorted.reduce((a,b)=>a+b.amount,0);
-
         return (
           <div style={{maxWidth:700}}>
             <h2 style={{fontSize:16,fontWeight:700,marginBottom:8}}>Ventas del período</h2>
             <PeriodSel/>
-
-            {/* Filtro por vendedor */}
             {sellers.length>0&&(
               <div style={{marginBottom:12}}>
                 <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:.6,marginBottom:6}}>Filtrar por vendedor</div>
@@ -624,26 +606,23 @@
                     const col=COLORS[i%COLORS.length];
                     return (
                       <button key={s} onClick={()=>toggleSeller(s)}
-                        style={{background:active?col:"none",border:`1px solid ${col}`,
-                          color:active?"#111318":col,padding:"5px 12px",borderRadius:20,
-                          fontSize:12,fontWeight:active?"600":"normal",transition:"all .15s",cursor:"pointer"}}>
+                        style={{background:active?col:"none",border:`1px solid ${col}`,color:active?"#111318":col,
+                          padding:"5px 12px",borderRadius:20,fontSize:12,fontWeight:active?"600":"normal",cursor:"pointer"}}>
                         {s}
                       </button>
                     );
                   })}
                   {ventaFilter.length>0&&(
                     <button onClick={()=>setVentaFilter([])}
-                      style={{background:"none",border:`1px solid ${C.b2}`,color:C.muted,
-                        padding:"5px 12px",borderRadius:20,fontSize:12,cursor:"pointer"}}>
+                      style={{background:"none",border:`1px solid ${C.b2}`,color:C.muted,padding:"5px 12px",borderRadius:20,fontSize:12,cursor:"pointer"}}>
                       Limpiar ✕
                     </button>
                   )}
                 </div>
               </div>
             )}
-
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-              <span style={{color:C.sub}}><b style={{color:C.text}}>{sorted.length}</b> registros{ventaFilter.length>0?` (filtrado)`:""}</span>
+              <span style={{color:C.sub}}><b style={{color:C.text}}>{sorted.length}</b> registros{ventaFilter.length>0?" (filtrado)":""}</span>
               <span style={{color:"#2ECC8A",fontWeight:700}}>{fmt(total)}</span>
             </div>
             {sorted.length===0
@@ -674,38 +653,97 @@
         );
       }
 
+      // ── OBJETIVOS con semáforo + mes resaltado + leyenda ─────────
       function renderObj(){
+        // Para semáforo usamos ventas del año actual por mes (no solo el seleccionado)
+        const salesByMonthSeller = useMemo ? null : null; // calculado inline abajo
+
         return (
-          <div style={{maxWidth:900}}>
+          <div style={{maxWidth:960}}>
             <h2 style={{fontSize:16,fontWeight:700,marginBottom:6}}>Objetivos mensuales</h2>
             <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                <thead><tr style={{borderBottom:`1px solid ${C.border}`}}>
-                  <th style={{padding:"8px 10px",textAlign:"left",color:C.muted,fontWeight:500,position:"sticky",left:0,background:C.card,zIndex:2}}>Vendedor</th>
-                  {MS.map((m,i)=><th key={i} style={{padding:"8px 5px",textAlign:"center",color:i===selMonth?"#58a6ff":C.muted,fontWeight:500,minWidth:52}}>{m}</th>)}
-                </tr></thead>
+                <thead>
+                  <tr style={{borderBottom:`1px solid ${C.border}`}}>
+                    <th style={{padding:"8px 10px",textAlign:"left",color:C.muted,fontWeight:500,position:"sticky",left:0,background:C.card,zIndex:2,minWidth:110}}>
+                      Vendedor
+                    </th>
+                    {MS.map((m,i)=>{
+                      const isCurMo = i===CUR_MONTH && selYear===CUR_YEAR;
+                      return (
+                        <th key={i} style={{
+                          padding:"8px 6px",textAlign:"center",minWidth:60,
+                          color: isCurMo?"#58a6ff":C.muted,
+                          fontWeight: isCurMo?700:500,
+                          background: isCurMo?"#0d1f33":"transparent",
+                          borderBottom: isCurMo?"2px solid #58a6ff":"none",
+                        }}>{m}{isCurMo&&<span style={{display:"block",fontSize:9,color:"#58a6ff88",fontWeight:400}}>actual</span>}</th>
+                      );
+                    })}
+                  </tr>
+                </thead>
                 <tbody>
                   {sellers.map((seller,si)=>{
-                    const r=sellerData.find(x=>x.seller===seller)||{total:0,p:0};
                     const col=COLORS[si%COLORS.length];
                     return (
                       <tr key={seller} style={{borderBottom:"1px solid #1e2530"}}>
-                        <td style={{padding:"8px 10px",fontWeight:500,whiteSpace:"nowrap",position:"sticky",left:0,background:C.card,zIndex:1,color:col}}>{seller}</td>
+                        <td style={{padding:"8px 10px",fontWeight:600,whiteSpace:"nowrap",
+                          position:"sticky",left:0,background:C.card,zIndex:1,color:col}}>
+                          {seller}
+                        </td>
                         {MONTHS.map((_,mo)=>{
-                          const g=goals[seller]&&goals[seller][mo];
-                          const perf=sc(pct(mo===selMonth?r.total:0,g||0));
-                          return <td key={mo} style={{textAlign:"center",padding:"6px 4px"}}>
-                            {g
-                              ? <span style={{fontSize:12,fontWeight:600,color:mo===selMonth?perf:C.sub}}>{fmtObj(g)}</span>
-                              : <span style={{color:C.faint,fontSize:12}}>—</span>
-                            }
-                          </td>;
+                          const g = goals[seller]&&goals[seller][mo];
+                          const isCurMo = mo===CUR_MONTH && selYear===CUR_YEAR;
+
+                          // Calcular venta real de ese mes para semáforo
+                          const ventaMo = sales.filter(s=>{
+                            const p=parseDateParts(s.date);
+                            return p&&p.y===selYear&&p.m===mo&&s.seller===seller;
+                          }).reduce((a,b)=>a+b.amount,0);
+
+                          const p = pct(ventaMo, g||0);
+                          const semColor = sc(p);
+                          const semBg    = scBg(p);
+
+                          return (
+                            <td key={mo} style={{
+                              textAlign:"center",padding:"6px 4px",
+                              background: isCurMo ? (g ? semBg : "#0d1f2a") : "transparent",
+                              borderLeft: isCurMo ? "1px solid #58a6ff33" : "none",
+                              borderRight: isCurMo ? "1px solid #58a6ff33" : "none",
+                            }}>
+                              {g
+                                ? <span style={{
+                                    fontSize:12,fontWeight:600,
+                                    color: isCurMo ? semColor : C.sub,
+                                  }}>
+                                    {fmtObj(g)}
+                                  </span>
+                                : <span style={{color:C.faint,fontSize:12}}>—</span>
+                              }
+                            </td>
+                          );
                         })}
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
+            </div>
+
+            {/* Leyenda semáforo */}
+            <div style={{display:"flex",alignItems:"center",gap:16,marginTop:14,flexWrap:"wrap"}}>
+              <span style={{fontSize:11,color:C.faint,textTransform:"uppercase",letterSpacing:.5}}>Semáforo mes actual:</span>
+              {[
+                {bg:"#172217",col:"#2ECC8A",label:"≥ 100% del objetivo"},
+                {bg:"#231f0e",col:"#F0A500",label:"70–99%"},
+                {bg:"#221515",col:"#E05C5C",label:"< 70%"},
+              ].map(l=>(
+                <span key={l.label} style={{display:"flex",alignItems:"center",gap:5}}>
+                  <span style={{width:12,height:12,borderRadius:3,background:l.bg,border:`1px solid ${l.col}66`,display:"inline-block"}}/>
+                  <span style={{fontSize:11,color:l.col}}>{l.label}</span>
+                </span>
+              ))}
             </div>
           </div>
         );
@@ -715,7 +753,7 @@
         const m=selMonth,yr=selYear,hols=getHols(m,yr);
         const dl=buildDays(m,yr,hols);
         const fdow=new Date(yr,m,1).getDay(),adj=(fdow+6)%7;
-        const todISO=isoD(TODAY.getFullYear(),TODAY.getMonth(),TODAY.getDate());
+        const todISO=isoD(CUR_YEAR,CUR_MONTH,TODAY.getDate());
         const cells=[]; for(let i=0;i<adj;i++) cells.push(null); dl.forEach(d=>cells.push(d));
         return (
           <div style={{maxWidth:440}}>
