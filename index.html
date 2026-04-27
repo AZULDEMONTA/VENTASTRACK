@@ -71,8 +71,8 @@
     const fmtObj = n => {
       if(!n) return "—";
       const abs=Math.abs(n);
-      if(abs>=1e6){ const v=n/1e6; return "$"+(Number.isInteger(v*10)?v.toFixed(v%1===0?0:1):v.toFixed(1))+"M"; }
-      if(abs>=1e3){ const v=n/1e3; return "$"+(Number.isInteger(v*10)?v.toFixed(v%1===0?0:1):v.toFixed(1))+"k"; }
+      if(abs>=1e6){ const v=n/1e6; return "$"+(v%1===0?v.toFixed(0):v.toFixed(1))+"M"; }
+      if(abs>=1e3){ const v=n/1e3; return "$"+(v%1===0?v.toFixed(0):v.toFixed(1))+"k"; }
       return "$"+n;
     };
 
@@ -334,7 +334,7 @@
                     {sellerData.map((r)=>(
                       <td key={r.seller} colSpan={2} style={{textAlign:"center",padding:"3px 10px",fontSize:11,color:C.sub,background:"#0f1318",borderLeft:`2px solid ${r.color}33`}}>{fmt(r.goal)}</td>
                     ))}
-                    <td colSpan={2} style={{textAlign:"center",padding:"3px 10px",fontSize:11,color:C.sub,background:"#0f1318",borderLeft:"2px solid #ffffff22"}}>{fmt(totalGoal)}</td>
+                    <td colSpan={2} style={{textAlign:"center",padding:"3px 10px",fontSize:11,color:C.sub,background:"#0f1318",borderLeft:"2px solid #ffffff22"}}>{fmt(sellerData.reduce((a,b)=>a+b.goal,0))}</td>
                   </tr>
                   <tr>
                     <th style={{padding:"3px 10px",fontSize:10,color:C.faint,textAlign:"left"}}>DIARIO $</th>
@@ -653,11 +653,8 @@
         );
       }
 
-      // ── OBJETIVOS con semáforo + mes resaltado + leyenda ─────────
+      // ── OBJETIVOS con semáforo todos los meses pasados + mes actual resaltado ──
       function renderObj(){
-        // Para semáforo usamos ventas del año actual por mes (no solo el seleccionado)
-        const salesByMonthSeller = useMemo ? null : null; // calculado inline abajo
-
         return (
           <div style={{maxWidth:960}}>
             <h2 style={{fontSize:16,fontWeight:700,marginBottom:6}}>Objetivos mensuales</h2>
@@ -665,7 +662,8 @@
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
                 <thead>
                   <tr style={{borderBottom:`1px solid ${C.border}`}}>
-                    <th style={{padding:"8px 10px",textAlign:"left",color:C.muted,fontWeight:500,position:"sticky",left:0,background:C.card,zIndex:2,minWidth:110}}>
+                    <th style={{padding:"8px 10px",textAlign:"left",color:C.muted,fontWeight:500,
+                      position:"sticky",left:0,background:C.card,zIndex:2,minWidth:110}}>
                       Vendedor
                     </th>
                     {MS.map((m,i)=>{
@@ -677,7 +675,10 @@
                           fontWeight: isCurMo?700:500,
                           background: isCurMo?"#0d1f33":"transparent",
                           borderBottom: isCurMo?"2px solid #58a6ff":"none",
-                        }}>{m}{isCurMo&&<span style={{display:"block",fontSize:9,color:"#58a6ff88",fontWeight:400}}>actual</span>}</th>
+                        }}>
+                          {m}
+                          {isCurMo&&<span style={{display:"block",fontSize:9,color:"#58a6ff88",fontWeight:400}}>actual</span>}
+                        </th>
                       );
                     })}
                   </tr>
@@ -693,13 +694,16 @@
                         </td>
                         {MONTHS.map((_,mo)=>{
                           const g = goals[seller]&&goals[seller][mo];
-                          const isCurMo = mo===CUR_MONTH && selYear===CUR_YEAR;
+                          const isCurMo  = mo===CUR_MONTH && selYear===CUR_YEAR;
+                          // semáforo para meses pasados Y mes actual del año seleccionado
+                          const isPastMo = selYear < CUR_YEAR || (selYear===CUR_YEAR && mo <= CUR_MONTH);
+                          const futureMo = !isPastMo;
 
-                          // Calcular venta real de ese mes para semáforo
-                          const ventaMo = sales.filter(s=>{
+                          // venta real de ese mes
+                          const ventaMo = isPastMo ? sales.filter(s=>{
                             const p=parseDateParts(s.date);
                             return p&&p.y===selYear&&p.m===mo&&s.seller===seller;
-                          }).reduce((a,b)=>a+b.amount,0);
+                          }).reduce((a,b)=>a+b.amount,0) : 0;
 
                           const p = pct(ventaMo, g||0);
                           const semColor = sc(p);
@@ -708,14 +712,16 @@
                           return (
                             <td key={mo} style={{
                               textAlign:"center",padding:"6px 4px",
-                              background: isCurMo ? (g ? semBg : "#0d1f2a") : "transparent",
-                              borderLeft: isCurMo ? "1px solid #58a6ff33" : "none",
+                              background: futureMo ? "transparent" : (g ? semBg : "#1a1a1a"),
+                              borderLeft:  isCurMo ? "1px solid #58a6ff33" : "none",
                               borderRight: isCurMo ? "1px solid #58a6ff33" : "none",
+                              // columna actual con fondo levemente más intenso
+                              ...(isCurMo ? {background: g ? semBg : "#0d1f2a"} : {}),
                             }}>
                               {g
                                 ? <span style={{
                                     fontSize:12,fontWeight:600,
-                                    color: isCurMo ? semColor : C.sub,
+                                    color: futureMo ? C.sub : semColor,
                                   }}>
                                     {fmtObj(g)}
                                   </span>
@@ -733,14 +739,16 @@
 
             {/* Leyenda semáforo */}
             <div style={{display:"flex",alignItems:"center",gap:16,marginTop:14,flexWrap:"wrap"}}>
-              <span style={{fontSize:11,color:C.faint,textTransform:"uppercase",letterSpacing:.5}}>Semáforo mes actual:</span>
+              <span style={{fontSize:11,color:C.faint,textTransform:"uppercase",letterSpacing:.5}}>Semáforo:</span>
               {[
                 {bg:"#172217",col:"#2ECC8A",label:"≥ 100% del objetivo"},
                 {bg:"#231f0e",col:"#F0A500",label:"70–99%"},
                 {bg:"#221515",col:"#E05C5C",label:"< 70%"},
+                {bg:"transparent",col:C.sub,label:"Mes futuro (sin dato)"},
               ].map(l=>(
                 <span key={l.label} style={{display:"flex",alignItems:"center",gap:5}}>
-                  <span style={{width:12,height:12,borderRadius:3,background:l.bg,border:`1px solid ${l.col}66`,display:"inline-block"}}/>
+                  <span style={{width:12,height:12,borderRadius:3,background:l.bg,
+                    border:`1px solid ${l.col}66`,display:"inline-block"}}/>
                   <span style={{fontSize:11,color:l.col}}>{l.label}</span>
                 </span>
               ))}
