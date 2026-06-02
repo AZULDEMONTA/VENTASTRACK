@@ -150,11 +150,18 @@
       return parseCSV(await r.text());
     }
 
+    function tipColor(hex) {
+      if (!hex) return C.text;
+      const c = hex.replace("#","");
+      const r=parseInt(c.slice(0,2),16), g=parseInt(c.slice(2,4),16), b=parseInt(c.slice(4,6),16);
+      const lum = (r*299+g*587+b*114)/1000;
+      return lum < 100 ? "#e8edf5" : hex;
+    }
     const TTip = ({active,payload,label}) => {
       if(!active||!payload?.length) return null;
       return <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 14px",fontSize:12}}>
-        <div style={{color:C.muted,marginBottom:4}}>{label}</div>
-        {payload.map((p,i)=><div key={i} style={{color:p.color||C.text,fontWeight:600}}>{p.name}: {fmtK(p.value)}</div>)}
+        <div style={{color:"#d8dfe8",marginBottom:4,fontWeight:600}}>{label}</div>
+        {payload.map((p,i)=><div key={i} style={{color:tipColor(p.color),fontWeight:600}}>{p.name}: {fmtK(p.value)}</div>)}
       </div>;
     };
 
@@ -475,7 +482,7 @@
                 <BarChart data={anualData} margin={{top:4,right:8,bottom:0,left:8}}>
                   <XAxis dataKey="mes" tick={{fill:C.sub,fontSize:11}} axisLine={false} tickLine={false}/>
                   <YAxis tickFormatter={fmtK} tick={{fill:C.sub,fontSize:11}} axisLine={false} tickLine={false} width={48}/>
-                  <Tooltip content={<TTip/>}/><Legend wrapperStyle={{fontSize:12,color:C.text,fontWeight:600}}/>
+                  <Tooltip content={<TTip/>}/><Legend formatter={v=><span style={{color:"#e8edf5",fontSize:12,fontWeight:600}}>{v}</span>}/>
                   <Bar dataKey="Vendido" fill="#4C9BE8" radius={[4,4,0,0]}/>
                   <Bar dataKey="Facturado" fill="#2ECC8A" radius={[4,4,0,0]}/>
                   <Bar dataKey="Facturable" fill="#A87FDB" radius={[4,4,0,0]}/>
@@ -491,7 +498,8 @@
                     <YAxis tickFormatter={fmtK} tick={{fill:C.sub,fontSize:11}} axisLine={false} tickLine={false} width={48}/>
                     <Tooltip content={<TTip/>}/>
                     <Bar dataKey="Venta" radius={[4,4,0,0]}>{vsObjData.map((e,i)=><Cell key={i} fill={e.color}/>)}</Bar>
-                    <Bar dataKey="Obj.acum." fill={C.border} radius={[4,4,0,0]}/>
+                    <Bar dataKey="Obj.acum." fill="#8fa3bc" radius={[4,4,0,0]} opacity={0.5}/>
+                    <Legend formatter={v=><span style={{color:"#e8edf5",fontSize:12,fontWeight:600}}>{v}</span>}/>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -503,7 +511,7 @@
                       {pieData.map((e,i)=><Cell key={i} fill={e.color}/>)}
                     </Pie>
                     <Tooltip formatter={v=>fmtK(v)} contentStyle={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,fontSize:11}}/>
-                    <Legend wrapperStyle={{fontSize:12,color:C.text,fontWeight:600}}/>
+                    <Legend formatter={v=><span style={{color:"#e8edf5",fontSize:12,fontWeight:600}}>{v}</span>}/>
                   </PieChart>
                 </ResponsiveContainer>
               </div>
